@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0614" />
+    <title>KonvaCraft Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&family=Playfair+Display:wght@400;500;600;700&family=Montserrat:wght@300;400;500;600;700&family=Lato:wght@300;400;700&family=Poppins:wght@300;400;500;600;700&family=Raleway:wght@300;400;500;600;700&family=Oswald:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700&family=Ubuntu:wght@300;400;500;700&family=Open+Sans:wght@300;400;500;600;700&family=Nunito:wght@300;400;500;600;700&family=Dancing+Script:wght@400;500;600;700&family=Pacifico&family=Bebas+Neue&family=Abril+Fatface&family=Righteous&family=Lobster&family=Comfortaa:wght@300;400;500;600;700&family=Permanent+Marker&family=Shadows+Into+Light&family=Architects+Daughter&family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Code+Pro:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      html {
+        height: 100%;
+        /* NO overflow:hidden here — dashboard needs to scroll */
+      }
+
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #0a0614;
+        /* DO NOT set overflow:hidden globally — it breaks scrollable pages.
+           Pages that need a locked viewport (editor) set it on their own container. */
+        min-height: 100%;
+      }
+
+      #root {
+        min-height: 100vh;
+      }
+
+      /* Editor-specific: lock scroll when inside the editor layout */
+      body.editor-active {
+        overflow: hidden;
+        height: 100vh;
+      }
+
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.4); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.7); }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
