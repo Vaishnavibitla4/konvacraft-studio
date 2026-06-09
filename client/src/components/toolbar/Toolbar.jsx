@@ -3,7 +3,7 @@ import { useEditorStore } from '../../store/editorStore'
 import { useAudioStore } from '../../store/audioStore'
 import { videoRegistry } from '../canvas/CanvasArea'
 import { toast } from '../Toast'
-import ShareDialog from './ShareDialog'
+import CodeGenPanel from './CodeGenPanel'
 
 const PRIMARY_SHAPES = [
   { id: 'rect',      icon: '▭', label: 'Rectangle',    key: 'R' },
@@ -590,7 +590,7 @@ export default function Toolbar({ stageRef, onSave, saving, designId, designTitl
   const { tool, setTool, undo, redo, selectedId, deleteShape, zoom, setZoom, stagePosition, setStagePosition, canvasSize } = useEditorStore()
   const [showShapes, setShowShapes] = useState(false)
   const [showExport, setShowExport] = useState(false)
-  const [showShare,  setShowShare]  = useState(false)
+  const [showCodeGen, setShowCodeGen] = useState(false)
 
   useEffect(() => {
     function onKey(e) {
@@ -661,20 +661,26 @@ export default function Toolbar({ stageRef, onSave, saving, designId, designTitl
         className={`flex items-center gap-1.5 text-sm font-semibold px-4 h-9 rounded-xl transition-all shadow-sm ${showExport ? 'bg-purple-600 text-white' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 shadow-indigo-200'}`}>
         ⬇ Export
       </button>
-      {/* Share button */}
       <button
-        onClick={() => { setShowShare(v => !v); setShowExport(false) }}
-        title="Share or embed this design"
-        className={`flex items-center gap-1.5 text-sm font-semibold px-4 h-9 rounded-xl transition-all shadow-sm ${
-          showShare
-            ? 'bg-emerald-600 text-white'
-            : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600 shadow-emerald-200'
-        }`}>
-        🔗 Share
-      </button>
+  onClick={() => { setShowCodeGen(v => !v); setShowExport(false) }}
+  className={`flex items-center gap-1.5 text-sm font-semibold px-4 h-9 rounded-xl transition-all shadow-sm ${
+    showCodeGen
+      ? 'bg-violet-700 text-white'
+      : 'bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:from-violet-700 hover:to-purple-700 shadow-violet-200'
+  }`}>
+  &lt;/&gt; Export Code
+</button>
+{showCodeGen && (
+  <CodeGenPanel
+    designId={designId}
+    designTitle={designTitle}
+    onClose={() => setShowCodeGen(false)}
+  />
+)}
+      
       {showShapes && <ShapesDialog currentTool={tool} onSelect={setTool} onClose={() => setShowShapes(false)} />}
       {showExport && <ExportDialog stageRef={stageRef} onClose={() => setShowExport(false)} />}
-      {showShare  && <ShareDialog designId={designId} designTitle={designTitle} onClose={() => setShowShare(false)} />}
+      
     </div>
   )
 }
