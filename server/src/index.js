@@ -7,7 +7,6 @@ import { dirname, join } from 'path'
 import { existsSync } from 'fs'
 import designsRouter from './routes/designs.js'
 import assetsRouter from './routes/assets.js'
-import codegenRouter from './routes/codegen.js'
 
 
 const __filename = fileURLToPath(import.meta.url)
@@ -42,7 +41,6 @@ app.use(express.urlencoded({
 // Routes
 app.use('/api/designs', designsRouter)
 app.use('/api/assets', assetsRouter)
-app.use('/api/codegen', codegenRouter)
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({

@@ -1,42 +1,505 @@
-// client/src/components/toolbar/CodeGenPanel.jsx
+
 import { useState, useRef, useEffect } from 'react'
 import { useEditorStore } from '../../store/editorStore'
-import { serializeDesign } from '../../lib/designSerializer'
-import { generateCode, FRAMEWORKS, CSS_METHODS } from '../../lib/codeGenerator'
-import api from '../../lib/api'
 
-// Syntax-highlight helper (basic, no external dep)
+const FRAMEWORKS = [
+  { id: 'react',  label: 'React',   ext: '.jsx' },
+  { id: 'nextjs', label: 'Next.js', ext: '.tsx' },
+  { id: 'vue',    label: 'Vue 3',   ext: '.vue' },
+  { id: 'html',   label: 'HTML',    ext: '.html' },
+]
+
+const CSS_METHODS = [
+  { id: 'inline',  label: 'Inline Styles' },
+  { id: 'classes', label: 'CSS Classes'   },
+]
+
+const EDITOR_FONTS = [
+  'Inter','Roboto','Open Sans','Lato','Poppins','Montserrat','Raleway','Nunito',
+  'Ubuntu','Comfortaa','Oswald','Bebas Neue','Righteous','Abril Fatface',
+  'Playfair Display','Merriweather','Dancing Script','Pacifico','Lobster',
+  'Permanent Marker','Shadows Into Light','Architects Daughter',
+  'Courier Prime','Source Code Pro','Space Mono','Special Elite',
+]
+
+function buildGoogleFontsUrl(usedFamilies) {
+  const families = usedFamilies
+    .filter(f => !['Georgia'].includes(f)) 
+    .map(f => `family=${encodeURIComponent(f)}:wght@400;700`)
+    .join('&')
+  return `https://fonts.googleapis.com/css2?${families}&display=swap`
+}
+
+function getShapeBounds(shape) {
+  switch (shape.type) {
+    case 'circle':
+    case 'triangle':
+    case 'pentagon':
+    case 'hexagon': {
+      const r = shape.radius || 60
+      return { x: shape.x - r, y: shape.y - r, width: r * 2, height: r * 2 }
+    }
+    case 'ellipse': {
+      const rx = shape.radiusX || 70
+      const ry = shape.radiusY || 45
+      return { x: shape.x - rx, y: shape.y - ry, width: rx * 2, height: ry * 2 }
+    }
+    case 'star': {
+      const r = shape.outerRadius || 65
+      return { x: shape.x - r, y: shape.y - r, width: r * 2, height: r * 2 }
+    }
+    case 'arrow':
+    case 'line': {
+      const pts = shape.points || [0, 0, 120, 0]
+      const xs = pts.filter((_, i) => i % 2 === 0)
+      const ys = pts.filter((_, i) => i % 2 !== 0)
+      const minX = Math.min(...xs); const maxX = Math.max(...xs)
+      const minY = Math.min(...ys); const maxY = Math.max(...ys)
+      return {
+        x: shape.x + minX,
+        y: shape.y + minY,
+        width:  Math.max(maxX - minX, 4),
+        height: Math.max(maxY - minY, 4),
+      }
+    }
+    default:
+      return {
+        x:      shape.x      || 0,
+        y:      shape.y      || 0,
+        width:  shape.width  || 0,
+        height: shape.height || 0,
+      }
+  }
+}
+
+
+function inferTag(shape) {
+  const name = (shape.name || '').toLowerCase()
+
+  if (name.includes('btn') || name.includes('button'))          return 'button'
+  if (name.includes('nav'))                                      return 'nav'
+  if (name.includes('header'))                                   return 'header'
+  if (name.includes('footer'))                                   return 'footer'
+  if (name.includes('hero'))                                     return 'section'
+  if (name.includes('card'))                                     return 'article'
+  if (name.includes('input') || name.includes('field'))         return 'input'
+  if (name.includes('link'))                                     return 'a'
+  if (name.includes('list'))                                     return 'ul'
+  if (name.includes('section') || name.includes('container'))   return 'section'
+  if (name.includes('modal') || name.includes('dialog'))        return 'dialog'
+  if (name.includes('badge') || name.includes('tag'))           return 'span'
+
+  if (shape.type === 'text')  return inferTextTag(shape)
+  if (shape.type === 'image') return 'img'
+  if (shape.type === 'video') return 'video'
+
+  return 'div'
+}
+
+function inferTextTag(shape) {
+  const size = shape.fontSize || 16
+  if (size >= 48) return 'h1'
+  if (size >= 36) return 'h2'
+  if (size >= 26) return 'h3'
+  if (size >= 20) return 'h4'
+  if (size >= 18) return 'h5'
+  if (size <= 11) return 'span'
+  return 'p'
+}
+
+function inferClassName(shape) {
+  if (shape.name) {
+    return shape.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '')
+  }
+  return `${shape.type}-${(shape.id || '000000').slice(0, 6)}`
+}
+
+
+function shapeToCSS(shape) {
+  const bounds = getShapeBounds(shape)
+  const css = {}
+
+  css.position = 'absolute'
+  css.left     = `${Math.round(bounds.x)}px`
+  css.top      = `${Math.round(bounds.y)}px`
+  css.width    = `${Math.round(bounds.width)}px`
+  css.height   = `${Math.round(bounds.height)}px`
+  css.boxSizing = 'border-box'
+
+  if (shape.rotation) {
+    css.transformOrigin = 'center center'
+    css.transform = `rotate(${shape.rotation}deg)`
+  }
+
+  if ((shape.opacity ?? 1) !== 1) css.opacity = shape.opacity
+
+  if (!['text', 'image', 'video', 'line', 'arrow'].includes(shape.type)) {
+    if (shape.fill) css.backgroundColor = shape.fill
+  }
+
+  if (shape.stroke && (shape.strokeWidth || 0) > 0) {
+    css.border = `${shape.strokeWidth}px solid ${shape.stroke}`
+  }
+
+  if (shape.type === 'roundrect' && shape.cornerRadius) {
+    css.borderRadius = `${shape.cornerRadius}px`
+  }
+
+  if (['circle', 'ellipse'].includes(shape.type)) {
+    css.borderRadius = '50%'
+  }
+
+  if (shape.type === 'triangle') {
+    css.backgroundColor = shape.fill || '#000'
+    css.clipPath = 'polygon(50% 0%, 0% 100%, 100% 100%)'
+    css.border = 'none'
+  }
+  if (shape.type === 'pentagon') {
+    css.backgroundColor = shape.fill || '#000'
+    css.clipPath = 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)'
+    css.border = 'none'
+  }
+  if (shape.type === 'hexagon') {
+    css.backgroundColor = shape.fill || '#000'
+    css.clipPath = 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)'
+    css.border = 'none'
+  }
+
+  if (shape.type === 'star') {
+    css.backgroundColor = shape.fill || '#000'
+    css.clipPath = 'polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)'
+    css.border = 'none'
+  }
+
+  if (shape.type === 'line' || shape.type === 'arrow') {
+    const pts    = shape.points || [0, 0, 120, 0]
+    const dx     = (pts[2] || 0) - (pts[0] || 0)
+    const dy     = (pts[3] || 0) - (pts[1] || 0)
+    const angle  = Math.atan2(dy, dx) * (180 / Math.PI)
+    const len    = Math.sqrt(dx * dx + dy * dy)
+    css.width            = `${Math.round(len)}px`
+    css.height           = `${shape.strokeWidth || 2}px`
+    css.backgroundColor  = shape.stroke || '#000'
+    css.transformOrigin  = '0 50%'
+    css.transform        = `rotate(${angle}deg)`
+    delete css.border
+  }
+
+  if (shape.type === 'text') {
+    css.color          = shape.fill       || '#000000'
+    css.fontSize       = `${shape.fontSize   || 16}px`
+    css.fontFamily     = `'${shape.fontFamily || 'Inter'}', sans-serif`
+    css.fontWeight     = shape.fontWeight || shape.fontStyle?.includes('bold')  ? 'bold'   : 'normal'
+    css.fontStyle      = shape.fontStyle?.includes('italic') ? 'italic' : 'normal'
+    css.textAlign      = shape.align      || 'left'
+    css.lineHeight     = '1.4'
+    css.whiteSpace     = 'pre-wrap'
+    css.wordBreak      = 'break-word'
+    delete css.backgroundColor
+  }
+
+  if (shape.type === 'image') {
+    css.objectFit = 'cover'
+    if (shape.cornerRadius) css.borderRadius = `${shape.cornerRadius}px`
+  }
+
+  const filters = []
+  if ((shape.brightness ?? 0) !== 0)  filters.push(`brightness(${1 + shape.brightness})`)
+  if ((shape.contrast   ?? 0) !== 0)  filters.push(`contrast(${1 + shape.contrast})`)
+  if ((shape.blurRadius ?? 0)  > 0)   filters.push(`blur(${shape.blurRadius}px)`)
+  if (shape.grayscale)                 filters.push('grayscale(1)')
+  if ((shape.saturation ?? 0) !== 0)  filters.push(`saturate(${1 + shape.saturation})`)
+  if (filters.length) css.filter = filters.join(' ')
+
+  if (shape.shadowColor && (shape.shadowBlur || 0) > 0) {
+    const ox = shape.shadowOffsetX || 0
+    const oy = shape.shadowOffsetY || 0
+    css.boxShadow = `${ox}px ${oy}px ${shape.shadowBlur}px ${shape.shadowColor}`
+  }
+
+  return css
+}
+
+
+function camelToKebab(str) {
+  return str.replace(/([A-Z])/g, '-$1').toLowerCase()
+}
+
+function cssToString(obj) {
+  return Object.entries(obj)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${camelToKebab(k)}: ${v}`)
+    .join('; ')
+}
+
+function cssToJSXObject(obj) {
+  const entries = Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  if (!entries.length) return '{{}}'
+  const inner = entries.map(([k, v]) => `  ${k}: '${String(v).replace(/'/g, '"')}'`).join(',\n')
+  return `{{\n${inner}\n}}`
+}
+
+function buildCSSBlock(shapes) {
+  return shapes.map(shape => {
+    const css  = shapeToCSS(shape)
+    const cls  = inferClassName(shape)
+    const body = Object.entries(css)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `  ${camelToKebab(k)}: ${v};`)
+      .join('\n')
+    return `.${cls} {\n${body}\n}`
+  }).join('\n\n')
+}
+
+
+function shapeToJSX(shape, cssMethod) {
+  const tag  = inferTag(shape)
+  const css  = shapeToCSS(shape)
+  const cls  = inferClassName(shape)
+  const self = tag === 'img' || tag === 'input'
+
+  let attrs = cssMethod === 'inline'
+    ? ` style=${cssToJSXObject(css)}`
+    : ` className="${cls}"`
+
+  if (tag === 'img')   attrs += `\n        src="${shape.src || ''}" alt="${shape.name || 'image'}"`
+  if (tag === 'video') attrs += ` src="${shape.src || ''}"${shape.muted ? ' muted' : ''}${shape.loop ? ' loop' : ''} controls`
+  if (tag === 'input') attrs += ` type="text" placeholder="${shape.text || ''}"`
+  if (tag === 'a')     attrs += ` href="#"`
+
+  const inner = shape.type === 'text' ? (shape.text || '') : ''
+
+  if (self) return `      <${tag}${attrs} />`
+  return `      <${tag}${attrs}>${inner}</${tag}>`
+}
+
+function shapeToHTML(shape, cssMethod) {
+  const tag  = inferTag(shape)
+  const css  = shapeToCSS(shape)
+  const cls  = inferClassName(shape)
+  const self = tag === 'img' || tag === 'input'
+
+  let attrs = cssMethod === 'inline'
+    ? ` style="${cssToString(css)}"`
+    : ` class="${cls}"`
+
+  if (tag === 'img')   attrs += ` src="${shape.src || ''}" alt="${shape.name || 'image'}"`
+  if (tag === 'video') attrs += ` src="${shape.src || ''}"${shape.muted ? ' muted' : ''}${shape.loop ? ' loop' : ''} controls`
+  if (tag === 'input') attrs += ` type="text" placeholder="${shape.text || ''}"`
+  if (tag === 'a')     attrs += ` href="#"`
+
+  const inner = shape.type === 'text' ? (shape.text || '') : ''
+
+  if (self) return `    <${tag}${attrs} />`
+  return `    <${tag}${attrs}>${inner}</${tag}>`
+}
+
+
+function collectUsedFonts(shapes) {
+  const used = new Set()
+  shapes.forEach(s => {
+    if (s.type === 'text' && s.fontFamily) used.add(s.fontFamily)
+  })
+  return [...used]
+}
+
+
+function generateReact(shapes, cssMethod, canvasSize, componentName) {
+  const cw       = canvasSize?.width  || 1200
+  const ch       = canvasSize?.height || 800
+  const visible  = shapes.filter(s => s.visible !== false)
+  const usedFonts = collectUsedFonts(visible)
+  const fontUrl  = usedFonts.length ? buildGoogleFontsUrl(usedFonts) : null
+
+  const elements = visible.map(s => shapeToJSX(s, cssMethod)).join('\n')
+  const cssBlock = cssMethod === 'classes' ? `\n// Styles\nconst css = \`\n${buildCSSBlock(visible)}\n\`` : ''
+  const styleInject = cssMethod === 'classes' ? '\n      <style>{css}</style>' : ''
+  const fontImport = fontUrl ? `\n      <link rel="stylesheet" href="${fontUrl}" />` : ''
+
+  return `import React from 'react'
+${cssBlock}
+
+export default function ${componentName}() {
+  return (
+    <>
+      <head>${fontImport}
+      </head>
+      <div
+        style={{
+          position: 'relative',
+          width: '${cw}px',
+          height: '${ch}px',
+          overflow: 'hidden',
+          background: '#ffffff',
+        }}
+      >${styleInject}
+${elements}
+      </div>
+    </>
+  )
+}`
+}
+
+function generateNextJS(shapes, cssMethod, canvasSize, componentName) {
+  const cw       = canvasSize?.width  || 1200
+  const ch       = canvasSize?.height || 800
+  const visible  = shapes.filter(s => s.visible !== false)
+  const usedFonts = collectUsedFonts(visible)
+  const fontUrl  = usedFonts.length ? buildGoogleFontsUrl(usedFonts) : null
+
+  const elements  = visible.map(s => shapeToJSX(s, cssMethod)).join('\n')
+  const cssBlock  = cssMethod === 'classes' ? `\nconst css = \`\n${buildCSSBlock(visible)}\n\`` : ''
+  const styleInject = cssMethod === 'classes' ? '\n        <style>{css}</style>' : ''
+  const fontLink  = fontUrl
+    ? `\nimport Head from 'next/head'\n`
+    : ''
+  const headBlock = fontUrl
+    ? `\n      <Head>\n        <link rel="stylesheet" href="${fontUrl}" />\n      </Head>`
+    : ''
+
+  return `'use client'
+${fontLink}import React from 'react'
+${cssBlock}
+
+export default function ${componentName}() {
+  return (
+    <>${headBlock}
+      <div
+        style={{
+          position: 'relative',
+          width: '${cw}px',
+          height: '${ch}px',
+          overflow: 'hidden',
+          background: '#ffffff',
+        }}
+      >${styleInject}
+${elements}
+      </div>
+    </>
+  )
+}`
+}
+
+function generateVue(shapes, cssMethod, canvasSize) {
+  const cw       = canvasSize?.width  || 1200
+  const ch       = canvasSize?.height || 800
+  const visible  = shapes.filter(s => s.visible !== false)
+  const usedFonts = collectUsedFonts(visible)
+  const fontUrl  = usedFonts.length ? buildGoogleFontsUrl(usedFonts) : null
+
+  const elements = visible.map(s => shapeToHTML(s, cssMethod)).join('\n')
+  const fontLink = fontUrl ? `\n  <link rel="stylesheet" href="${fontUrl}" />` : ''
+  const cssBlock = cssMethod === 'classes'
+    ? buildCSSBlock(visible)
+    : `.design-canvas { position: relative; width: ${cw}px; height: ${ch}px; overflow: hidden; background: #ffffff; }`
+
+  return `<template>
+  <div class="design-canvas">
+${elements}
+  </div>
+</template>
+
+<script setup>
+// Generated by KonvaCraft Studio
+</script>
+
+<style>
+${fontLink ? `@import url('${fontUrl}');` : ''}
+
+.design-canvas {
+  position: relative;
+  width: ${cw}px;
+  height: ${ch}px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+${cssMethod === 'classes' ? buildCSSBlock(visible) : ''}
+</style>`
+}
+
+function generateHTML(shapes, cssMethod, canvasSize) {
+  const cw       = canvasSize?.width  || 1200
+  const ch       = canvasSize?.height || 800
+  const visible  = shapes.filter(s => s.visible !== false)
+  const usedFonts = collectUsedFonts(visible)
+  const fontUrl  = usedFonts.length ? buildGoogleFontsUrl(usedFonts) : null
+
+  const elements = visible.map(s => shapeToHTML(s, cssMethod)).join('\n')
+  const fontLink = fontUrl ? `\n  <link rel="preconnect" href="https://fonts.googleapis.com">\n  <link rel="stylesheet" href="${fontUrl}">` : ''
+
+  const baseCSS = `.design-canvas {\n  position: relative;\n  width: ${cw}px;\n  height: ${ch}px;\n  overflow: hidden;\n  background: #ffffff;\n}`
+  const shapeCSS = cssMethod === 'classes' ? `\n\n${buildCSSBlock(visible)}` : ''
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Design Export</title>${fontLink}
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    ${baseCSS}${shapeCSS}
+  </style>
+</head>
+<body>
+  <div class="design-canvas">
+${elements}
+  </div>
+</body>
+</html>`
+}
+
+function generateFromDesign(pages, currentPageIndex, canvasSize, options = {}) {
+  const { framework = 'react', cssMethod = 'inline', componentName = 'DesignPage' } = options
+  const page   = pages?.[currentPageIndex]
+  const shapes = page?.shapes || []
+
+  if (!shapes.length) return '// No shapes on this page'
+
+  const name = componentName.trim().replace(/[^a-zA-Z0-9]/g, '') || 'DesignPage'
+
+  if (framework === 'react')  return generateReact(shapes, cssMethod, canvasSize, name)
+  if (framework === 'nextjs') return generateNextJS(shapes, cssMethod, canvasSize, name)
+  if (framework === 'vue')    return generateVue(shapes, cssMethod, canvasSize)
+  if (framework === 'html')   return generateHTML(shapes, cssMethod, canvasSize)
+
+  return generateReact(shapes, cssMethod, canvasSize, name)
+}
+
+// ─── SYNTAX HIGHLIGHTER ───────────────────────────────────────────────────────
+
 function highlight(code) {
   return code
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/(\/\/.*)/g, '<span style="color:#6ee7b7">$1</span>')
-    .replace(/(".*?")/g, '<span style="color:#fcd34d">$1</span>')
-    .replace(/\b(import|export|const|let|function|return|default|from|if|else)\b/g,
+    .replace(/(\/\/[^\n]*)/g,         '<span style="color:#6ee7b7">$1</span>')
+    .replace(/(`[^`\n]*`)/g,          '<span style="color:#fde68a">$1</span>')
+    .replace(/("(?:[^"\\]|\\.)*")/g,  '<span style="color:#fcd34d">$1</span>')
+    .replace(/('(?:[^'\\]|\\.)*')/g,  '<span style="color:#fcd34d">$1</span>')
+    .replace(/\b(import|export|default|from|return|const|let|var|function|if|else|true|false|null|undefined)\b/g,
       '<span style="color:#c4b5fd">$1</span>')
-    .replace(/\b(useState|useEffect|useRef)\b/g,
+    .replace(/\b(React|useState|useEffect|style|className|src|alt|href|type|controls|muted|loop|placeholder)\b/g,
       '<span style="color:#93c5fd">$1</span>')
 }
 
+// ─── PANEL COMPONENT ──────────────────────────────────────────────────────────
+
 export default function CodeGenPanel({ designId, designTitle, onClose }) {
-  const store        = useEditorStore()
-  const dialogRef    = useRef()
+  const { pages, currentPageIndex, canvasSize } = useEditorStore()
 
-  // Config state
-  const [framework,   setFramework]  = useState('react')
-  const [cssMethod,   setCssMethod]  = useState('tailwind')
-  const [agentPrompt, setAgentPrompt] = useState('')
+  const dialogRef = useRef()
 
-  // Pipeline state
-  const [step, setStep] = useState('idle')
-  // idle → serializing → tagging → generating → done → error
+  const [framework,     setFramework]     = useState('react')
+  const [cssMethod,     setCssMethod]     = useState('inline')
+  const [componentName, setComponentName] = useState('DesignPage')
+  const [generatedCode, setGeneratedCode] = useState('')
+  const [activeTab,     setActiveTab]     = useState('config')
+  const [copied,        setCopied]        = useState(false)
+  const [error,         setError]         = useState('')
 
-  const [taggedDesign,    setTaggedDesign]    = useState(null)
-  const [generatedCode,   setGeneratedCode]   = useState('')
-  const [decisions,       setDecisions]       = useState([])
-  const [activeTab,       setActiveTab]       = useState('config')
-  // config | decisions | code | preview
-  const [copied,          setCopied]          = useState(false)
-  const [error,           setError]           = useState('')
+  const currentPage = pages?.[currentPageIndex]
+  const shapeCount  = currentPage?.shapes?.filter(s => s.visible !== false)?.length || 0
+  const fw          = FRAMEWORKS.find(f => f.id === framework)
 
   // Close on outside click
   useEffect(() => {
@@ -47,117 +510,33 @@ export default function CodeGenPanel({ designId, designTitle, onClose }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
+  // Close on Escape
   useEffect(() => {
     function handler(e) { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
 
-  // ── STAGE 1 + 2 + 3 orchestration ─────────────────────────────
-  async function runPipeline() {
+  // ── Generate ──────────────────────────────────────────────────────────────
+  function generate() {
     setError('')
-    setGeneratedCode('')
-    setTaggedDesign(null)
-    setDecisions([])
-
     try {
-      // Stage 1: Serialize
-      setStep('serializing')
-      const { pages, canvasSize, currentPageIndex } = store
-      const designJson = serializeDesign(pages, canvasSize, currentPageIndex)
+      if (!pages?.length)  throw new Error('No pages found in your design.')
+      if (!shapeCount)     throw new Error('This page has no visible shapes to export.')
 
-        // Add above the setStep('tagging') call
-const currentPage = store.pages[store.currentPageIndex]
-if (currentPage?.shapes?.length > 40) {
-  setError('Design has too many elements for the free model. Try selecting a single page with fewer than 40 shapes.')
-  setStep('error')
-  return
-}
-
-      // Stage 2: AI Tag via server proxy
-      setStep('tagging')
-      const tagRes = await api.post('/codegen/tag', {
-        prompt: buildTagPrompt(designJson),
-        designJson,
+      const code = generateFromDesign(pages, currentPageIndex, canvasSize, {
+        framework,
+        cssMethod,
+        componentName,
       })
-
-      const rawText = tagRes.data?.content?.map(b => b.text || '').join('') || ''
-      const cleaned = rawText.replace(/```json|```/g, '').trim()
-      let tagged
-      try { tagged = JSON.parse(cleaned)
-        // After: let tagged = JSON.parse(cleaned)
-// Add this validation:
-if (!tagged.pages || !Array.isArray(tagged.pages)) {
-  throw new Error('Unexpected AI response shape. Please try again.')
-}
-       }
-      catch { throw new Error('AI returned invalid JSON during tagging step.') }
-
-      setTaggedDesign(tagged)
-
-      // Extract decisions for review panel
-      const allNodes = tagged.pages?.flatMap(p => p.nodes) || []
-      setDecisions(allNodes.map(n => ({
-        id:            n.id,
-        name:          n.componentName || n.cssClass || n.rawType,
-        htmlTag:       n.htmlTag,
-        isComponent:   n.isComponent,
-        componentName: n.componentName,
-        props:         n.props || [],
-        action:        n.action,
-        responsive:    n.responsive,
-      })))
-
-      setActiveTab('decisions')
-      setStep('tagged')
-    } catch (err) {
-      console.error(err)
-      setError(err.message || 'Pipeline failed.')
-      setStep('error')
-    }
-  }
-
-  async function runCodeGen(overrideDecisions) {
-    if (!taggedDesign) return
-    setStep('generating')
-    setError('')
-
-    try {
-      // Apply any user overrides back onto the tagged design
-      const finalDesign = applyOverrides(taggedDesign, overrideDecisions || decisions)
-
-      // Stage 3: Generate code
-      const code = await generateCode({ taggedDesign: finalDesign, framework, cssMethod, agentPrompt })
       setGeneratedCode(code)
       setActiveTab('code')
-      setStep('done')
     } catch (err) {
-      console.error(err)
-      setError(err.message || 'Code generation failed.')
-      setStep('error')
+      setError(err.message)
     }
   }
 
-  function applyOverrides(design, decisionsList) {
-    return {
-      ...design,
-      pages: design.pages.map(page => ({
-        ...page,
-        nodes: page.nodes.map(node => {
-          const override = decisionsList.find(d => d.id === node.id)
-          if (!override) return node
-          return {
-            ...node,
-            htmlTag:       override.htmlTag,
-            isComponent:   override.isComponent,
-            componentName: override.componentName,
-            props:         override.props,
-          }
-        }),
-      })),
-    }
-  }
-
+  // ── Copy ──────────────────────────────────────────────────────────────────
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(generatedCode)
@@ -166,53 +545,37 @@ if (!tagged.pages || !Array.isArray(tagged.pages)) {
     } catch {}
   }
 
+  // ── Download ──────────────────────────────────────────────────────────────
   function handleDownload() {
-    const fw = FRAMEWORKS.find(f => f.id === framework)
-    const ext = fw?.ext || '.jsx'
-    const filename = (designTitle || 'design').replace(/\s+/g, '-').toLowerCase() + ext
-    const blob = new Blob([generatedCode], { type: 'text/plain' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href = url; a.download = filename
+    const ext      = fw?.ext || '.jsx'
+    const safeName = (designTitle || 'design').replace(/\s+/g, '-').toLowerCase()
+    const blob     = new Blob([generatedCode], { type: 'text/plain' })
+    const url      = URL.createObjectURL(blob)
+    const a        = document.createElement('a')
+    a.href = url; a.download = safeName + ext
     document.body.appendChild(a); a.click()
     document.body.removeChild(a)
     setTimeout(() => URL.revokeObjectURL(url), 2000)
   }
 
-  const isRunning = ['serializing', 'tagging', 'generating'].includes(step)
-
-  const STEP_LABELS = {
-    idle:        '',
-    serializing: 'Reading canvas…',
-    tagging:     'AI analyzing design…',
-    tagged:      'Design analyzed',
-    generating:  'Generating code…',
-    done:        'Code ready',
-    error:       'Error',
-  }
-
-  // ── Render ─────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div
-      ref={dialogRef}
-      className="absolute right-0 top-14 z-50"
-      style={{ width: 520 }}
-    >
+    <div ref={dialogRef} className="absolute right-0 top-14 z-50" style={{ width: 500 }}>
       <div className="rounded-2xl shadow-2xl overflow-hidden"
-        style={{ background: '#0f172a', border: '1px solid rgba(124,58,237,0.3)' }}>
+        style={{ background: '#0f172a', border: '1px solid rgba(124,58,237,0.35)' }}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4"
           style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-sm"
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold"
               style={{ background: 'linear-gradient(135deg,#7c3aed,#ec4899)' }}>
               {'</>'}
             </div>
             <div>
               <p className="text-sm font-bold text-white">Export Code</p>
-              <p className="text-xs text-white/40 mt-0.5 truncate" style={{ maxWidth: 260 }}>
-                {step === 'idle' ? 'AI-powered design to code' : STEP_LABELS[step]}
+              <p className="text-xs text-white/40 mt-0.5">
+                {shapeCount} shape{shapeCount !== 1 ? 's' : ''} · {currentPage?.label || 'Page 1'}
               </p>
             </div>
           </div>
@@ -225,9 +588,8 @@ if (!tagged.pages || !Array.isArray(tagged.pages)) {
         {/* Tabs */}
         <div className="flex px-5 pt-3 gap-1">
           {[
-            { id: 'config',    label: '⚙ Config' },
-            { id: 'decisions', label: '🤖 AI Decisions', disabled: !taggedDesign },
-            { id: 'code',      label: '</> Code',         disabled: !generatedCode },
+            { id: 'config', label: '⚙ Config' },
+            { id: 'code',   label: '</> Code', disabled: !generatedCode },
           ].map(tab => (
             <button key={tab.id} onClick={() => !tab.disabled && setActiveTab(tab.id)}
               disabled={tab.disabled}
@@ -245,62 +607,70 @@ if (!tagged.pages || !Array.isArray(tagged.pages)) {
 
         <div className="px-5 pb-5 pt-4 space-y-4">
 
-          {/* ── CONFIG TAB ──────────────────────────────────────── */}
+          {/* ── CONFIG TAB ── */}
           {activeTab === 'config' && (
             <>
-              {/* Framework picker */}
+              {/* Framework */}
               <div>
-                <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">
-                  Framework
-                </p>
+                <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">Framework</p>
                 <div className="grid grid-cols-4 gap-2">
-                  {FRAMEWORKS.map(fw => (
-                    <button key={fw.id} onClick={() => setFramework(fw.id)}
+                  {FRAMEWORKS.map(f => (
+                    <button key={f.id} onClick={() => setFramework(f.id)}
                       className={`py-2 rounded-xl text-xs font-semibold border transition-all
-                        ${framework === fw.id
+                        ${framework === f.id
                           ? 'border-violet-500 bg-violet-600/20 text-violet-300'
                           : 'border-white/10 text-white/50 hover:border-white/30 hover:text-white/70'
                         }`}>
-                      {fw.label}
+                      {f.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* CSS method picker */}
+              {/* CSS Method */}
               <div>
-                <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">
-                  CSS Method
-                </p>
+                <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">CSS Method</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {CSS_METHODS.map(css => (
-                    <button key={css.id} onClick={() => setCssMethod(css.id)}
+                  {CSS_METHODS.map(c => (
+                    <button key={c.id} onClick={() => setCssMethod(c.id)}
                       className={`py-2 rounded-xl text-xs font-semibold border transition-all
-                        ${cssMethod === css.id
+                        ${cssMethod === c.id
                           ? 'border-pink-500 bg-pink-600/15 text-pink-300'
                           : 'border-white/10 text-white/50 hover:border-white/30 hover:text-white/70'
                         }`}>
-                      {css.label}
+                      {c.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Agent prompt */}
-              <div>
-                <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">
-                  Agent Instructions (optional)
-                </p>
-                <textarea
-                  value={agentPrompt}
-                  onChange={e => setAgentPrompt(e.target.value)}
-                  placeholder='e.g. "Make all buttons use rounded-full", "Add dark mode support", "Use TypeScript"'
-                  rows={3}
-                  className="w-full rounded-xl px-3 py-2.5 text-xs text-white/80 resize-none focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-                />
+              {/* Component name */}
+              {(framework === 'react' || framework === 'nextjs') && (
+                <div>
+                  <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">Component Name</p>
+                  <input value={componentName} onChange={e => setComponentName(e.target.value)}
+                    placeholder="DesignPage"
+                    className="w-full h-9 px-3 rounded-xl text-xs text-white/80 focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }} />
+                </div>
+              )}
+
+              {/* Canvas info */}
+              <div className="rounded-xl px-3 py-2.5 flex items-center justify-between"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div>
+                  <p className="text-xs font-semibold text-white/60">{currentPage?.label || 'Page 1'}</p>
+                  <p className="text-[10px] text-white/30 mt-0.5">
+                    {canvasSize?.width || 1200} × {canvasSize?.height || 800}px · {shapeCount} element{shapeCount !== 1 ? 's' : ''}
+                  </p>
+                </div>
+                <div className="text-[10px] font-semibold px-2 py-1 rounded-lg"
+                  style={{ background: 'rgba(124,58,237,0.2)', color: '#a78bfa' }}>
+                  {fw?.ext}
+                </div>
               </div>
 
+              {/* Error */}
               {error && (
                 <div className="rounded-xl px-3 py-2 text-xs text-red-300"
                   style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
@@ -308,56 +678,21 @@ if (!tagged.pages || !Array.isArray(tagged.pages)) {
                 </div>
               )}
 
-              <button onClick={runPipeline} disabled={isRunning}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              {/* Generate button */}
+              <button onClick={generate} disabled={!shapeCount}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'linear-gradient(135deg,#7c3aed,#ec4899)' }}>
-                {isRunning
-                  ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> {STEP_LABELS[step]}</>
-                  : '✦ Analyze Design with AI'
-                }
+                &lt;/&gt; Generate {fw?.label} Code
               </button>
             </>
           )}
 
-          {/* ── DECISIONS TAB ───────────────────────────────────── */}
-          {activeTab === 'decisions' && taggedDesign && (
-            <>
-              <p className="text-xs text-white/40 mb-3">
-                Review what the AI inferred. Edit any field before generating code.
-              </p>
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {decisions.map((d, i) => (
-  <DecisionRow key={d.id || `decision-${i}`} decision={d}
-                    onChange={updated => setDecisions(prev =>
-                      prev.map((x, j) => j === i ? updated : x)
-                    )} />
-                ))}
-              </div>
-
-              {error && (
-                <div className="rounded-xl px-3 py-2 text-xs text-red-300"
-                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                  ⚠ {error}
-                </div>
-              )}
-
-              <button onClick={() => runCodeGen(decisions)} disabled={isRunning}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ background: 'linear-gradient(135deg,#7c3aed,#ec4899)' }}>
-                {isRunning
-                  ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Generating…</>
-                  : `</> Generate ${FRAMEWORKS.find(f => f.id === framework)?.label} Code`
-                }
-              </button>
-            </>
-          )}
-
-          {/* ── CODE TAB ────────────────────────────────────────── */}
+          {/* ── CODE TAB ── */}
           {activeTab === 'code' && generatedCode && (
             <>
               <div className="relative rounded-xl overflow-hidden"
-                style={{ background: '#020617', border: '1px solid rgba(255,255,255,0.07)', maxHeight: 340 }}>
-                <div className="overflow-auto" style={{ maxHeight: 340 }}>
+                style={{ background: '#020617', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div className="overflow-auto" style={{ maxHeight: 360 }}>
                   <pre className="text-[11px] font-mono p-4 leading-relaxed text-white/80"
                     dangerouslySetInnerHTML={{ __html: highlight(generatedCode) }} />
                 </div>
@@ -365,44 +700,48 @@ if (!tagged.pages || !Array.isArray(tagged.pages)) {
                   className="absolute top-2.5 right-2.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
                   style={{
                     background: copied ? '#059669' : 'rgba(255,255,255,0.08)',
-                    color: copied ? '#fff' : '#94a3b8',
-                    border: '1px solid rgba(255,255,255,0.08)',
+                    color:      copied ? '#fff'    : '#94a3b8',
+                    border:     '1px solid rgba(255,255,255,0.08)',
                   }}>
                   {copied ? '✓ Copied!' : '⎘ Copy'}
                 </button>
               </div>
 
+              {/* Stats */}
+              <div className="flex items-center gap-2 text-[10px] text-white/30">
+                <span>{shapeCount} elements</span>
+                <span>·</span>
+                <span>{generatedCode.split('\n').length} lines</span>
+                <span>·</span>
+                <span>{(generatedCode.length / 1024).toFixed(1)} KB</span>
+                <span>·</span>
+                <span className="text-violet-400/70">
+                  {fw?.label} · {CSS_METHODS.find(c => c.id === cssMethod)?.label}
+                </span>
+              </div>
+
+              {/* Actions */}
               <div className="flex gap-2">
                 <button onClick={handleDownload}
                   className="flex-1 py-2 rounded-xl text-xs font-semibold text-white/70 border border-white/10 hover:border-white/30 hover:text-white transition-all">
-                  ⬇ Download File
+                  ⬇ Download {fw?.ext}
                 </button>
-                <button onClick={() => { setActiveTab('config'); setStep('idle') }}
+                <button onClick={() => setActiveTab('config')}
                   className="flex-1 py-2 rounded-xl text-xs font-semibold text-white/70 border border-white/10 hover:border-white/30 hover:text-white transition-all">
-                  ↺ Start Over
+                  ↺ Regenerate
                 </button>
               </div>
 
-              {/* Agent refinement */}
-              <div>
-                <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">
-                  Refine with Agent
+              {/* Naming tip */}
+              <div className="rounded-xl px-3 py-2.5"
+                style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)' }}>
+                <p className="text-[10px] font-semibold text-violet-400 mb-1">💡 Better output tip</p>
+                <p className="text-[10px] text-white/40 leading-relaxed">
+                  Name your layers for smarter tags —{' '}
+                  <span className="text-violet-300/70">btn-primary</span> → <span className="text-violet-300/70">&lt;button&gt;</span>,{' '}
+                  <span className="text-violet-300/70">nav-header</span> → <span className="text-violet-300/70">&lt;nav&gt;</span>,{' '}
+                  <span className="text-violet-300/70">hero-image</span> → <span className="text-violet-300/70">&lt;section&gt;</span>
                 </p>
-                <div className="flex gap-2">
-                  <input
-                    value={agentPrompt}
-                    onChange={e => setAgentPrompt(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && agentPrompt.trim()) runCodeGen() }}
-                    placeholder='e.g. "Add TypeScript types" or "Use semantic HTML"'
-                    className="flex-1 h-9 px-3 rounded-xl text-xs text-white/80 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-                  />
-                  <button onClick={() => runCodeGen()} disabled={isRunning || !agentPrompt.trim()}
-                    className="px-3 h-9 rounded-xl text-xs font-semibold text-white disabled:opacity-40 transition-all"
-                    style={{ background: 'rgba(124,58,237,0.5)', border: '1px solid rgba(124,58,237,0.4)' }}>
-                    {isRunning ? '…' : '✦'}
-                  </button>
-                </div>
               </div>
             </>
           )}
@@ -411,99 +750,4 @@ if (!tagged.pages || !Array.isArray(tagged.pages)) {
       </div>
     </div>
   )
-}
-
-// Single decision row with inline editing
-function DecisionRow({ decision, onChange }) {
-  const HTML_TAGS = [
-    'div','section','article','main','header','footer','nav',
-    'button','a','input','form','label',
-    'h1','h2','h3','h4','p','span','ul','li',
-    'img','video',
-  ]
-
-  return (
-    <div className="rounded-xl px-3 py-2.5"
-      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="text-xs font-semibold text-white/70 truncate" style={{ maxWidth: 160 }}>
-          {decision.name || decision.id.slice(0, 10)}
-        </span>
-        {/* isComponent toggle */}
-        <label className="flex items-center gap-1.5 text-[10px] text-white/40 cursor-pointer">
-          <input type="checkbox" checked={decision.isComponent}
-            onChange={e => onChange({ ...decision, isComponent: e.target.checked })}
-            className="accent-violet-500 w-3 h-3" />
-          Component
-        </label>
-      </div>
-
-      <div className="flex gap-2">
-        {/* HTML tag */}
-        <div className="flex-1">
-          <label className="block text-[9px] text-white/30 mb-0.5">HTML tag</label>
-          <select value={decision.htmlTag}
-            onChange={e => onChange({ ...decision, htmlTag: e.target.value })}
-            className="w-full h-7 px-2 rounded-lg text-xs text-white/70 focus:outline-none"
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
-            {HTML_TAGS.map(t => <option key={t} value={t}>{`<${t}>`}</option>)}
-          </select>
-        </div>
-
-        {/* Component name (when isComponent) */}
-        {decision.isComponent && (
-          <div className="flex-1">
-            <label className="block text-[9px] text-white/30 mb-0.5">Component name</label>
-            <input value={decision.componentName || ''}
-              onChange={e => onChange({ ...decision, componentName: e.target.value })}
-              placeholder="MyComponent"
-              className="w-full h-7 px-2 rounded-lg text-xs text-white/70 focus:outline-none"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} />
-          </div>
-        )}
-      </div>
-
-      {/* Props (when isComponent) */}
-      {decision.isComponent && decision.props?.length > 0 && (
-        <p className="text-[9px] text-white/30 mt-1.5">
-          Props: {decision.props.join(', ')}
-        </p>
-      )}
-
-      {/* Action */}
-      {decision.action && (
-        <p className="text-[9px] text-violet-400/70 mt-1">
-          Action: {decision.action.type} — {decision.action.description}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function buildTagPrompt(designJson) {
-  return `You are a design-to-code AI. Analyze this canvas design and return a tagged version.
-
-Canvas size: ${designJson.canvasWidth}x${designJson.canvasHeight}px
-
-For each node add:
-- "htmlTag": semantic HTML element (button, h1, p, img, section, nav, div, etc.)
-- "layoutType": "flex-row" | "flex-col" | "grid" | "absolute" | "none"
-- "isComponent": true if clearly reusable UI component
-- "componentName": PascalCase name if isComponent
-- "props": array of prop names
-- "responsive": { "mobile": "stack" | "hide" | "shrink", "breakpoint": 768 }
-- "action": null or { "type": "navigate"|"submit"|"toggle", "description": "..." }
-- "cssClass": kebab-case class name
-
-Heuristics:
-- Large text (fontSize > 24) = h1-h3
-- Small text (< 14) = span or caption
-- Rect behind text = div/card/button container
-- Row of similar elements = nav items or list
-- Full-width element at top = header/hero
-
-Return ONLY valid JSON matching the input structure with added fields. No markdown, no explanation.
-
-Design:
-${JSON.stringify(designJson, null, 2)}`
 }
