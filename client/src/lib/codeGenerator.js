@@ -47,67 +47,67 @@ export function generateFromDesign(pages, currentPageIndex, options = {}) {
 
 function shapeToElement(shape, framework) {
   const tag = inferTag(shape);
-  if (shape.type === "arrow") {
-    const css = shapeToCSS(shape);
 
+  if (shape.type === "arrow") {
+    const pts = shape.points || [0, 0, 120, 0];
+    const x1 = pts[0] || 0;
+    const y1 = pts[1] || 0;
+    const x2 = pts[2] ?? 120;
+    const y2 = pts[3] ?? 0;
+
+    const strokeColor = shape.stroke || "#000";
+    const strokeWidth = shape.strokeWidth || 3;
     const pointerLength = shape.pointerLength || 15;
     const pointerWidth = shape.pointerWidth || 12;
-    const color = shape.stroke || "#000";
 
-    return `
-<svg
-  style={${cssToJSXObject({
-    position: "absolute",
-    left: `${shape.x}px`,
-    top: `${shape.y}px`,
-    overflow: "visible"
-  })}}
-  width="${120}"
-  height="${20}"
->
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    // Stop the line short so it doesn't poke through the arrowhead
+    const lineEndX = x2 - (pointerLength * dx) / len;
+    const lineEndY = y2 - (pointerLength * dy) / len;
+
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+    // Half-width padding so strokes/arrowhead aren't clipped
+    const pad = Math.max(strokeWidth, pointerWidth) + 2;
+    const svgW = Math.round(Math.abs(dx) + pointerLength + pad * 2);
+    const svgH = Math.round(Math.abs(dy) + pointerWidth + pad * 2);
+    // Offset so the start point sits correctly inside the padded viewBox
+    const ox = pad - Math.min(x1, x2);
+    const oy = pad - Math.min(y1, y2);
+
+    const rotation = shape.rotation || 0;
+    const rotateOriginX = x1 + ox;
+    const rotateOriginY = y1 + oy;
+
+    const posStyle =
+      framework === "react"
+        ? `{{ position: 'absolute', left: '${shape.x}px', top: '${shape.y}px', overflow: 'visible'${rotation ? `, transform: 'rotate(${rotation}deg)', transformOrigin: '${rotateOriginX}px ${rotateOriginY}px'` : ""} }}`
+        : `position:absolute;left:${shape.x}px;top:${shape.y}px;overflow:visible${rotation ? `;transform:rotate(${rotation}deg);transform-origin:${rotateOriginX}px ${rotateOriginY}px` : ""}`;
+    const styleAttr =
+      framework === "react" ? `style={${posStyle}}` : `style="${posStyle}"`;
+
+    const hw = pointerWidth / 2;
+    const markerId = `ah-${shape.id || "a"}`;
+    return `<svg ${styleAttr} width="${svgW}" height="${svgH}">
+  <defs>
+    <marker id="${markerId}" markerUnits="userSpaceOnUse" markerWidth="${pointerLength}" markerHeight="${pointerWidth}" refX="0" refY="${hw}" orient="auto">
+      <polygon points="0 0, ${pointerLength} ${hw}, 0 ${pointerWidth}" fill="${strokeColor}" />
+    </marker>
+  </defs>
   <line
-    x1="0"
-    y1="10"
-    x2="105"
-    y2="10"
-    stroke="${shape.stroke}"
-    strokeWidth="${shape.strokeWidth}"
+    x1="${x1 + ox}" y1="${y1 + oy}"
+    x2="${lineEndX + ox}" y2="${lineEndY + oy}"
+    stroke="${strokeColor}"
+    stroke-width="${strokeWidth}"
+    marker-end="url(#${markerId})"
   />
-
-  <polygon
-    points="105,10 90,4 90,16"
-    fill="${shape.stroke}"
-  />
-</svg>
-`;
-}
+</svg>`;
   }
+
   const styles = shapeToCSS(shape);
   const inner = shape.type === "text" ? shape.text || "" : "";
-  if (shape.type === "arrow") {
-    const style = styleToString(shapeToCSS(shape));
-
-    const pointerLength = shape.pointerLength || 15;
-    const pointerWidth = shape.pointerWidth || 12;
-    const color = shape.stroke || "#000";
-
-    return `
-    <div style="${style}">
-      <div
-        style="
-          position:absolute;
-          right:-${pointerLength}px;
-          top:-${pointerWidth / 2}px;
-          width:0;
-          height:0;
-          border-top:${pointerWidth / 2}px solid transparent;
-          border-bottom:${pointerWidth / 2}px solid transparent;
-          border-left:${pointerLength}px solid ${color};
-        "
-      ></div>
-    </div>
-  `;
-  }
   if (framework === "react") {
     return `<${tag} style={${JSON.stringify(styles)}}>${inner}</${tag}>`;
   }
@@ -147,12 +147,23 @@ function inferTextTag(shape) {
 }
 
 function shapeToCSS(shape) {
+  const scaleX = shape.scaleX ?? 1;
+  const scaleY = shape.scaleY ?? 1;
+  const offsetX = shape.offsetX ?? 0;
+  const offsetY = shape.offsetY ?? 0;
+  const w = (shape.width || 0) * scaleX;
+  const h = (shape.height || 0) * scaleY;
+  const left = (shape.x || 0) - offsetX * scaleX;
+  const top = (shape.y || 0) - offsetY * scaleY;
+  const pivotX = Math.round(offsetX * scaleX);
+  const pivotY = Math.round(offsetY * scaleY);
+
   const css = {
     position: "absolute",
-    left: `${shape.x || 0}px`,
-    top: `${shape.y || 0}px`,
-    width: `${shape.width || 0}px`,
-    height: `${shape.height || 0}px`,
+    left: `${Math.round(left)}px`,
+    top: `${Math.round(top)}px`,
+    width: `${Math.round(w)}px`,
+    height: `${Math.round(h)}px`,
     opacity: shape.opacity ?? 1,
   };
 
@@ -160,7 +171,10 @@ function shapeToCSS(shape) {
   if (shape.stroke)
     css.border = `${shape.strokeWidth || 1}px solid ${shape.stroke}`;
   if (shape.cornerRadius) css.borderRadius = `${shape.cornerRadius}px`;
-  if (shape.rotation) css.transform = `rotate(${shape.rotation}deg)`;
+  if (shape.rotation) {
+    css.transformOrigin = `${pivotX}px ${pivotY}px`;
+    css.transform = `rotate(${shape.rotation}deg)`;
+  }
 
   if (shape.type === "text") {
     css.color = shape.fill || "#000000";

@@ -89,13 +89,20 @@ function getShapeBounds(shape) {
         height: Math.max(maxY - minY, 4),
       };
     }
-    default:
+    default: {
+      const scaleX = shape.scaleX ?? 1;
+      const scaleY = shape.scaleY ?? 1;
+      const offsetX = shape.offsetX ?? 0;
+      const offsetY = shape.offsetY ?? 0;
+      const w = (shape.width || 0) * scaleX;
+      const h = (shape.height || 0) * scaleY;
       return {
-        x: shape.x || 0,
-        y: shape.y || 0,
-        width: shape.width || 0,
-        height: shape.height || 0,
+        x: (shape.x || 0) - offsetX * scaleX,
+        y: (shape.y || 0) - offsetY * scaleY,
+        width: w,
+        height: h,
       };
+    }
   }
 }
 
@@ -156,7 +163,16 @@ function shapeToCSS(shape) {
   const transforms = [];
 
   if (shape.rotation) {
-    css.transformOrigin = "center center";
+    const scaleX = shape.scaleX ?? 1;
+    const scaleY = shape.scaleY ?? 1;
+    const offsetX = shape.offsetX ?? 0;
+    const offsetY = shape.offsetY ?? 0;
+    // In Konva, rotation pivot is at (offsetX, offsetY) in local space.
+    // In CSS, left/top already subtract the scaled offset, so the pivot
+    // relative to the element's top-left corner is (offsetX*scaleX, offsetY*scaleY).
+    const pivotX = Math.round(offsetX * scaleX);
+    const pivotY = Math.round(offsetY * scaleY);
+    css.transformOrigin = `${pivotX}px ${pivotY}px`;
     transforms.push(`rotate(${shape.rotation}deg)`);
   }
 
@@ -317,27 +333,53 @@ function buildCSSBlock(shapes) {
 
 function shapeToJSX(shape, cssMethod) {
   if (shape.type === "arrow") {
-    const css = shapeToCSS(shape);
+    const pts = shape.points || [0, 0, 120, 0];
+    const x1 = pts[0] || 0;
+    const y1 = pts[1] || 0;
+    const x2 = pts[2] ?? 120;
+    const y2 = pts[3] ?? 0;
 
+    const color = shape.stroke || "#000";
+    const strokeWidth = shape.strokeWidth || 3;
     const pointerLength = shape.pointerLength || 15;
     const pointerWidth = shape.pointerWidth || 12;
-    const color = shape.stroke || "#000";
+    const hw = pointerWidth / 2;
 
-    return `
-      <div style=${cssToJSXObject(css)}>
-        <div
-          style={{
-            position: 'absolute',
-            right: '-${pointerLength}px',
-            top: '-${pointerWidth / 2}px',
-            width: '0',
-            height: '0',
-            borderTop: '${pointerWidth / 2}px solid transparent',
-            borderBottom: '${pointerWidth / 2}px solid transparent',
-            borderLeft: '${pointerLength}px solid ${color}'
-          }}
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const lineEndX = x2 - (pointerLength * dx) / len;
+    const lineEndY = y2 - (pointerLength * dy) / len;
+
+    const pad = Math.max(strokeWidth, pointerWidth) + 2;
+    const svgW = Math.round(Math.abs(dx) + pointerLength + pad * 2);
+    const svgH = Math.round(Math.abs(dy) + pointerWidth + pad * 2);
+    const ox = pad - Math.min(x1, x2);
+    const oy = pad - Math.min(y1, y2);
+
+    const rotation = shape.rotation || 0;
+    const rotateOriginX = x1 + ox;
+    const rotateOriginY = y1 + oy;
+    const transformStyle = rotation
+      ? `, transform: 'rotate(${rotation}deg)', transformOrigin: '${rotateOriginX}px ${rotateOriginY}px'`
+      : "";
+    const posStyle = `{{ position: 'absolute', left: '${shape.x}px', top: '${shape.y}px', overflow: 'visible'${transformStyle} }}`;
+    const markerId = `ah-${shape.id || "a"}`;
+
+    return `      <svg style={${posStyle}} width="${svgW}" height="${svgH}">
+        <defs>
+          <marker id="${markerId}" markerUnits="userSpaceOnUse" markerWidth="${pointerLength}" markerHeight="${pointerWidth}" refX="0" refY="${hw}" orient="auto">
+            <polygon points="0 0, ${pointerLength} ${hw}, 0 ${pointerWidth}" fill="${color}" />
+          </marker>
+        </defs>
+        <line
+          x1="${x1 + ox}" y1="${y1 + oy}"
+          x2="${lineEndX + ox}" y2="${lineEndY + oy}"
+          stroke="${color}"
+          strokeWidth="${strokeWidth}"
+          markerEnd="url(#${markerId})"
         />
-      </div>`;
+      </svg>`;
   }
   const tag = inferTag(shape);
   const css = shapeToCSS(shape);
@@ -365,25 +407,45 @@ function shapeToJSX(shape, cssMethod) {
 
 function shapeToHTML(shape, cssMethod) {
   if (shape.type === "arrow") {
-    const css = shapeToCSS(shape);
+    const pts = shape.points || [0, 0, 120, 0];
+    const x1 = pts[0] || 0;
+    const y1 = pts[1] || 0;
+    const x2 = pts[2] ?? 120;
+    const y2 = pts[3] ?? 0;
 
+    const color = shape.stroke || "#000";
+    const strokeWidth = shape.strokeWidth || 3;
     const pointerLength = shape.pointerLength || 15;
     const pointerWidth = shape.pointerWidth || 12;
-    const color = shape.stroke || "#000";
+    const hw = pointerWidth / 2;
 
-    return `
-    <div style="${cssToString(css)}">
-      <div style="
-        position:absolute;
-        right:-${pointerLength}px;
-        top:-${pointerWidth / 2}px;
-        width:0;
-        height:0;
-        border-top:${pointerWidth / 2}px solid transparent;
-        border-bottom:${pointerWidth / 2}px solid transparent;
-        border-left:${pointerLength}px solid ${color};
-      "></div>
-    </div>`;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const lineEndX = x2 - (pointerLength * dx) / len;
+    const lineEndY = y2 - (pointerLength * dy) / len;
+
+    const pad = Math.max(strokeWidth, pointerWidth) + 2;
+    const svgW = Math.round(Math.abs(dx) + pointerLength + pad * 2);
+    const svgH = Math.round(Math.abs(dy) + pointerWidth + pad * 2);
+    const ox = pad - Math.min(x1, x2);
+    const oy = pad - Math.min(y1, y2);
+    const rotation = shape.rotation || 0;
+    const rotateOriginX = x1 + ox;
+    const rotateOriginY = y1 + oy;
+    const transformStyle = rotation
+      ? `;transform:rotate(${rotation}deg);transform-origin:${rotateOriginX}px ${rotateOriginY}px`
+      : "";
+    const markerId = `ah-${shape.id || "a"}`;
+
+    return `    <svg style="position:absolute;left:${shape.x}px;top:${shape.y}px;overflow:visible${transformStyle}" width="${svgW}" height="${svgH}">
+      <defs>
+        <marker id="${markerId}" markerUnits="userSpaceOnUse" markerWidth="${pointerLength}" markerHeight="${pointerWidth}" refX="0" refY="${hw}" orient="auto">
+          <polygon points="0 0, ${pointerLength} ${hw}, 0 ${pointerWidth}" fill="${color}" />
+        </marker>
+      </defs>
+      <line x1="${x1 + ox}" y1="${y1 + oy}" x2="${lineEndX + ox}" y2="${lineEndY + oy}" stroke="${color}" stroke-width="${strokeWidth}" marker-end="url(#${markerId})" />
+    </svg>`;
   }
   const tag = inferTag(shape);
   const css = shapeToCSS(shape);
@@ -447,7 +509,7 @@ export default function ${componentName}() {
           position: 'relative',
           width: '${cw}px',
           height: '${ch}px',
-          overflow: 'hidden',
+          clipPath: 'inset(0)',
           background: '#ffffff',
         }}
       >${styleInject}
@@ -489,7 +551,7 @@ export default function ${componentName}() {
           position: 'relative',
           width: '${cw}px',
           height: '${ch}px',
-          overflow: 'hidden',
+          clipPath: 'inset(0)',
           background: '#ffffff',
         }}
       >${styleInject}
@@ -514,7 +576,7 @@ function generateVue(shapes, cssMethod, canvasSize) {
   const cssBlock =
     cssMethod === "classes"
       ? buildCSSBlock(visible)
-      : `.design-canvas { position: relative; width: ${cw}px; height: ${ch}px; overflow: hidden; background: #ffffff; }`;
+      : `.design-canvas { position: relative; width: ${cw}px; height: ${ch}px; clip-path: inset(0); background: #ffffff; }`;
 
   return `<template>
   <div class="design-canvas">
@@ -533,7 +595,7 @@ ${fontLink ? `@import url('${fontUrl}');` : ""}
   position: relative;
   width: ${cw}px;
   height: ${ch}px;
-  overflow: hidden;
+  clip-path: inset(0);
   background: #ffffff;
 }
 
@@ -553,7 +615,7 @@ function generateHTML(shapes, cssMethod, canvasSize) {
     ? `\n  <link rel="preconnect" href="https://fonts.googleapis.com">\n  <link rel="stylesheet" href="${fontUrl}">`
     : "";
 
-  const baseCSS = `.design-canvas {\n  position: relative;\n  width: ${cw}px;\n  height: ${ch}px;\n  overflow: hidden;\n  background: #ffffff;\n}`;
+  const baseCSS = `.design-canvas {\n  position: relative;\n  width: ${cw}px;\n  height: ${ch}px;\n  clip-path: inset(0);\n  background: #ffffff;\n}`;
   const shapeCSS =
     cssMethod === "classes" ? `\n\n${buildCSSBlock(visible)}` : "";
 
