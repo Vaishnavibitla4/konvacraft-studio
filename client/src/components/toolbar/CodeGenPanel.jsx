@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useEditorStore } from "../../store/editorStore";
+import { processCSS } from "../../lib/postcssProcessor";
 
 const FRAMEWORKS = [
   { id: "react", label: "React", ext: ".jsx" },
@@ -472,13 +473,12 @@ function shapeToHTML(shape, cssMethod) {
 function collectUsedFonts(shapes) {
   const used = new Set();
   shapes.forEach((s) => {
-    console.log(JSON.stringify(s, null, 2));
     if (s.type === "text" && s.fontFamily) used.add(s.fontFamily);
   });
   return [...used];
 }
 
-function generateReact(shapes, cssMethod, canvasSize, componentName) {
+async function generateReact(shapes, cssMethod, canvasSize, componentName) {
   const cw = canvasSize?.width || 1200;
   const ch = canvasSize?.height || 800;
   const visible = shapes.filter((s) => s.visible !== false);
@@ -486,10 +486,14 @@ function generateReact(shapes, cssMethod, canvasSize, componentName) {
   const fontUrl = usedFonts.length ? buildGoogleFontsUrl(usedFonts) : null;
 
   const elements = visible.map((s) => shapeToJSX(s, cssMethod)).join("\n");
-  const cssBlock =
-    cssMethod === "classes"
-      ? `\n// Styles\nconst css = \`\n${buildCSSBlock(visible)}\n\``
-      : "";
+  let cssBlock = "";
+
+  if (cssMethod === "classes") {
+    const rawCss = buildCSSBlock(visible);
+    const optimizedCss = await processCSS(rawCss);
+
+    cssBlock = `\n// Styles\nconst css = \`\n${optimizedCss}\n\``;
+  }
   const styleInject =
     cssMethod === "classes" ? "\n      <style>{css}</style>" : "";
   const fontImport = fontUrl
@@ -520,7 +524,7 @@ ${elements}
 }`;
 }
 
-function generateNextJS(shapes, cssMethod, canvasSize, componentName) {
+async function generateNextJS(shapes, cssMethod, canvasSize, componentName) {
   const cw = canvasSize?.width || 1200;
   const ch = canvasSize?.height || 800;
   const visible = shapes.filter((s) => s.visible !== false);
@@ -528,10 +532,14 @@ function generateNextJS(shapes, cssMethod, canvasSize, componentName) {
   const fontUrl = usedFonts.length ? buildGoogleFontsUrl(usedFonts) : null;
 
   const elements = visible.map((s) => shapeToJSX(s, cssMethod)).join("\n");
-  const cssBlock =
-    cssMethod === "classes"
-      ? `\nconst css = \`\n${buildCSSBlock(visible)}\n\``
-      : "";
+  let cssBlock = "";
+
+  if (cssMethod === "classes") {
+    const rawCss = buildCSSBlock(visible);
+    const optimizedCss = await processCSS(rawCss);
+
+    cssBlock = `\nconst css = \`\n${optimizedCss}\n\``;
+  }
   const styleInject =
     cssMethod === "classes" ? "\n        <style>{css}</style>" : "";
   const fontLink = fontUrl ? `\nimport Head from 'next/head'\n` : "";
@@ -562,7 +570,7 @@ ${elements}
 }`;
 }
 
-function generateVue(shapes, cssMethod, canvasSize) {
+async function generateVue(shapes, cssMethod, canvasSize) {
   const cw = canvasSize?.width || 1200;
   const ch = canvasSize?.height || 800;
   const visible = shapes.filter((s) => s.visible !== false);
@@ -573,11 +581,15 @@ function generateVue(shapes, cssMethod, canvasSize) {
   const fontLink = fontUrl
     ? `\n  <link rel="stylesheet" href="${fontUrl}" />`
     : "";
-  const cssBlock =
-    cssMethod === "classes"
-      ? buildCSSBlock(visible)
-      : `.design-canvas { position: relative; width: ${cw}px; height: ${ch}px; clip-path: inset(0); background: #ffffff; }`;
+  let optimizedCss = "";
 
+  if (cssMethod === "classes") {
+    optimizedCss = await processCSS(buildCSSBlock(visible));
+  }
+
+  if (cssMethod === "classes") {
+    optimizedCss = await processCSS(buildCSSBlock(visible));
+  }
   return `<template>
   <div class="design-canvas">
 ${elements}
@@ -603,7 +615,7 @@ ${cssMethod === "classes" ? buildCSSBlock(visible) : ""}
 </style>`;
 }
 
-function generateHTML(shapes, cssMethod, canvasSize) {
+async function generateHTML(shapes, cssMethod, canvasSize) {
   const cw = canvasSize?.width || 1200;
   const ch = canvasSize?.height || 800;
   const visible = shapes.filter((s) => s.visible !== false);
@@ -616,9 +628,17 @@ function generateHTML(shapes, cssMethod, canvasSize) {
     : "";
 
   const baseCSS = `.design-canvas {\n  position: relative;\n  width: ${cw}px;\n  height: ${ch}px;\n  clip-path: inset(0);\n  background: #ffffff;\n}`;
-  const shapeCSS =
-    cssMethod === "classes" ? `\n\n${buildCSSBlock(visible)}` : "";
+  let optimizedCss = "";
 
+  if (cssMethod === "classes") {
+    optimizedCss = await processCSS(buildCSSBlock(visible));
+  }
+
+  const shapeCSS = cssMethod === "classes" ? `\n\n${optimizedCss}` : "";
+
+  if (cssMethod === "classes") {
+    optimizedCss = await processCSS(buildCSSBlock(visible));
+  }
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -638,7 +658,12 @@ ${elements}
 </html>`;
 }
 
-function generateFromDesign(pages, currentPageIndex, canvasSize, options = {}) {
+async function generateFromDesign(
+  pages,
+  currentPageIndex,
+  canvasSize,
+  options = {},
+) {
   const {
     framework = "react",
     cssMethod = "inline",
@@ -655,11 +680,13 @@ function generateFromDesign(pages, currentPageIndex, canvasSize, options = {}) {
   if (framework === "react")
     return generateReact(shapes, cssMethod, canvasSize, name);
   if (framework === "nextjs")
-    return generateNextJS(shapes, cssMethod, canvasSize, name);
-  if (framework === "vue") return generateVue(shapes, cssMethod, canvasSize);
-  if (framework === "html") return generateHTML(shapes, cssMethod, canvasSize);
+    return await generateNextJS(shapes, cssMethod, canvasSize, name);
+  if (framework === "vue")
+    return await generateVue(shapes, cssMethod, canvasSize);
+  if (framework === "html")
+    return await generateHTML(shapes, cssMethod, canvasSize);
 
-  return generateReact(shapes, cssMethod, canvasSize, name);
+  return await generateReact(shapes, cssMethod, canvasSize, name);
 }
 
 // ─── SYNTAX HIGHLIGHTER ───────────────────────────────────────────────────────
@@ -722,18 +749,23 @@ export default function CodeGenPanel({ designId, designTitle, onClose }) {
   }, [onClose]);
 
   // ── Generate ──────────────────────────────────────────────────────────────
-  function generate() {
+  async function generate() {
     setError("");
     try {
       if (!pages?.length) throw new Error("No pages found in your design.");
       if (!shapeCount)
         throw new Error("This page has no visible shapes to export.");
 
-      const code = generateFromDesign(pages, currentPageIndex, canvasSize, {
-        framework,
-        cssMethod,
-        componentName,
-      });
+      const code = await generateFromDesign(
+        pages,
+        currentPageIndex,
+        canvasSize,
+        {
+          framework,
+          cssMethod,
+          componentName,
+        },
+      );
       setGeneratedCode(code);
       setActiveTab("code");
     } catch (err) {
