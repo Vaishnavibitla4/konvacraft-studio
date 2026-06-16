@@ -50,8 +50,6 @@ function buildGoogleFontsUrl(usedFamilies) {
   return `https://fonts.googleapis.com/css2?${families}&display=swap`;
 }
 
-// Replicates Konva's internal text measurement so text shapes with no
-// explicit width (auto-size mode) get the correct CSS width in the output.
 const _measureCanvas = document.createElement("canvas");
 const _measureCtx = _measureCanvas.getContext("2d");
 
@@ -126,8 +124,6 @@ function getShapeBounds(shape) {
       let w = (shape.width || 0) * scaleX;
       let h = (shape.height || 0) * scaleY;
 
-      // Konva text with no explicit width auto-sizes to fit the content.
-      // Replicate that here so the generated CSS width is never 0.
       if (shape.type === "text" && (!shape.width || shape.width < 2)) {
         const measured = measureTextSize(shape);
         w = measured.width * scaleX;
@@ -195,8 +191,7 @@ function shapeToCSS(shape) {
   css.position = "absolute";
   css.left = `${Math.round(bounds.x)}px`;
   css.top = `${Math.round(bounds.y)}px`;
-  // For text shapes Konva didn't assign an explicit width to,
-  // use max-content so the browser sizes it naturally — same as Konva's auto-size.
+
   if (shape.type === "text" && (!shape.width || shape.width < 2)) {
     css.width = "max-content";
     css.height = "auto";
@@ -212,9 +207,7 @@ function shapeToCSS(shape) {
     const scaleY = shape.scaleY ?? 1;
     const offsetX = shape.offsetX ?? 0;
     const offsetY = shape.offsetY ?? 0;
-    // In Konva, rotation pivot is at (offsetX, offsetY) in local space.
-    // In CSS, left/top already subtract the scaled offset, so the pivot
-    // relative to the element's top-left corner is (offsetX*scaleX, offsetY*scaleY).
+
     const pivotX = Math.round(offsetX * scaleX);
     const pivotY = Math.round(offsetY * scaleY);
     css.transformOrigin = `${pivotX}px ${pivotY}px`;
@@ -303,14 +296,11 @@ function shapeToCSS(shape) {
     css.fontSize = `${shape.fontSize || 16}px`;
     css.fontFamily = `'${shape.fontFamily || "Inter"}', sans-serif`;
 
-    // Konva stores bold/italic in a single combined `fontStyle` field,
-    // e.g. "normal", "bold", "italic", "bold italic", or a numeric weight like "600".
-    // There is no separate fontWeight field on Konva text shapes.
     const konvaFontStyle = shape.fontStyle || "normal";
     const isBold =
       konvaFontStyle === "bold" ||
       konvaFontStyle.includes("bold") ||
-      /^\d+$/.test(konvaFontStyle); // numeric weight like "600"
+      /^\d+$/.test(konvaFontStyle);
     const isItalic = konvaFontStyle.includes("italic");
 
     css.fontWeight = isBold
@@ -721,8 +711,6 @@ function generateFromDesign(pages, currentPageIndex, canvasSize, options = {}) {
   return generateReact(shapes, cssMethod, canvasSize, name);
 }
 
-// ─── SYNTAX HIGHLIGHTER ───────────────────────────────────────────────────────
-
 function highlight(code) {
   return code
     .replace(/&/g, "&amp;")
@@ -742,8 +730,6 @@ function highlight(code) {
     );
 }
 
-// ─── PANEL COMPONENT ──────────────────────────────────────────────────────────
-
 export default function CodeGenPanel({ designId, designTitle, onClose }) {
   const { pages, currentPageIndex, canvasSize } = useEditorStore();
 
@@ -762,7 +748,6 @@ export default function CodeGenPanel({ designId, designTitle, onClose }) {
     currentPage?.shapes?.filter((s) => s.visible !== false)?.length || 0;
   const fw = FRAMEWORKS.find((f) => f.id === framework);
 
-  // Close on outside click
   useEffect(() => {
     function handler(e) {
       if (dialogRef.current && !dialogRef.current.contains(e.target)) onClose();
@@ -780,7 +765,6 @@ export default function CodeGenPanel({ designId, designTitle, onClose }) {
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  // ── Generate ──────────────────────────────────────────────────────────────
   function generate() {
     setError("");
     try {
@@ -800,7 +784,6 @@ export default function CodeGenPanel({ designId, designTitle, onClose }) {
     }
   }
 
-  // ── Copy ──────────────────────────────────────────────────────────────────
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(generatedCode);
@@ -809,7 +792,6 @@ export default function CodeGenPanel({ designId, designTitle, onClose }) {
     } catch {}
   }
 
-  // ── Download ──────────────────────────────────────────────────────────────
   function handleDownload() {
     const ext = fw?.ext || ".jsx";
     const safeName = (designTitle || "design")
@@ -826,7 +808,6 @@ export default function CodeGenPanel({ designId, designTitle, onClose }) {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div
       ref={dialogRef}

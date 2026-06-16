@@ -63,17 +63,14 @@ function shapeToElement(shape, framework) {
     const dx = x2 - x1;
     const dy = y2 - y1;
     const len = Math.sqrt(dx * dx + dy * dy);
-    // Stop the line short so it doesn't poke through the arrowhead
     const lineEndX = x2 - (pointerLength * dx) / len;
     const lineEndY = y2 - (pointerLength * dy) / len;
 
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-    // Half-width padding so strokes/arrowhead aren't clipped
     const pad = Math.max(strokeWidth, pointerWidth) + 2;
     const svgW = Math.round(Math.abs(dx) + pointerLength + pad * 2);
     const svgH = Math.round(Math.abs(dy) + pointerWidth + pad * 2);
-    // Offset so the start point sits correctly inside the padded viewBox
     const ox = pad - Math.min(x1, x2);
     const oy = pad - Math.min(y1, y2);
 

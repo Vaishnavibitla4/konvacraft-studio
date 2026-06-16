@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { searchImages } from '../api/unsplash'
-import { searchPexels, searchPexelsVideos } from '../api/pexels'
-import { useEditorStore } from '../store/editorStore'
+import { useState } from "react";
+import { searchImages } from "../api/unsplash";
+import { searchPexels, searchPexelsVideos } from "../api/pexels";
+import { useEditorStore } from "../store/editorStore";
 
 function Skeleton() {
   return (
@@ -13,44 +13,41 @@ function Skeleton() {
           style={{
             height: 80 + (i % 3) * 20,
             background:
-              'linear-gradient(90deg,rgba(255,255,255,0.05) 25%,rgba(255,255,255,0.1) 50%,rgba(255,255,255,0.05) 75%)',
-            backgroundSize: '200% 100%',
-            animation: 'shimmerSlide 1.5s infinite',
+              "linear-gradient(90deg,rgba(255,255,255,0.05) 25%,rgba(255,255,255,0.1) 50%,rgba(255,255,255,0.05) 75%)",
+            backgroundSize: "200% 100%",
+            animation: "shimmerSlide 1.5s infinite",
           }}
         />
       ))}
     </div>
-  )
+  );
 }
 
 export default function ImageSearch({ onSearch, mode }) {
-  const [query, setQuery] = useState('')
-  const [images, setImages] = useState([])
-  const [videos, setVideos] = useState([])
-  const [activeTab, setActiveTab] = useState('images')
-  const [loading, setLoading] = useState(false)
-  const [searched, setSearched] = useState(false)
+  const [query, setQuery] = useState("");
+  const [images, setImages] = useState([]);
+  const [videos, setVideos] = useState([]);
+  const [activeTab, setActiveTab] = useState("images");
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
 
-  const { addShape } = useEditorStore()
+  const { addShape } = useEditorStore();
 
   async function handleSearch() {
-    if (!query.trim()) return
+    if (!query.trim()) return;
 
-    setLoading(true)
-    setSearched(false)
+    setLoading(true);
+    setSearched(false);
 
     try {
       const [unsplashRes, pexelsImgs, pexelsVids] = await Promise.all([
         searchImages(query).catch(() => []),
         searchPexels(query).catch(() => []),
         searchPexelsVideos(query).catch(() => []),
-      ])
+      ]);
 
-      // -----------------------------
-      // IMAGES
-      // -----------------------------
       const mergedImages = [
-        ...unsplashRes.map(img => ({
+        ...unsplashRes.map((img) => ({
           id: `u-${img.id}`,
           preview: img.urls.small,
           full: img.urls.regular,
@@ -58,31 +55,26 @@ export default function ImageSearch({ onSearch, mode }) {
           credit: img.user?.name,
         })),
 
-        ...pexelsImgs.map(img => ({
+        ...pexelsImgs.map((img) => ({
           id: `p-${img.id}`,
           preview: img.src.medium,
           full: img.src.large,
           color: img.avg_color,
           credit: img.photographer,
         })),
-      ]
+      ];
 
-      // ✅ Remove duplicate image IDs
       const uniqueImages = Array.from(
-        new Map(mergedImages.map(img => [img.id, img])).values()
-      )
+        new Map(mergedImages.map((img) => [img.id, img])).values(),
+      );
 
-      setImages(uniqueImages)
+      setImages(uniqueImages);
 
-      // -----------------------------
-      // VIDEOS
-      // -----------------------------
       const mergedVideos = pexelsVids
-        .map(v => ({
+        .map((v) => ({
           id: `v-${v.id}`,
           preview: v.image,
 
-          // Best quality video URL
           src: v._bestUrl,
 
           duration: v.duration,
@@ -90,49 +82,46 @@ export default function ImageSearch({ onSearch, mode }) {
           height: v._height,
           credit: v.user?.name,
         }))
-        .filter(v => v.src)
+        .filter((v) => v.src);
 
-      // ✅ Remove duplicate video IDs
       const uniqueVideos = Array.from(
-        new Map(mergedVideos.map(v => [v.id, v])).values()
-      )
+        new Map(mergedVideos.map((v) => [v.id, v])).values(),
+      );
 
-      setVideos(uniqueVideos)
+      setVideos(uniqueVideos);
 
-      setSearched(true)
-      setActiveTab('images')
+      setSearched(true);
+      setActiveTab("images");
 
-      onSearch?.()
+      onSearch?.();
     } catch (err) {
-      console.error('Search error:', err)
+      console.error("Search error:", err);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   function addImage(url) {
     addShape({
-      type: 'image',
+      type: "image",
       src: url,
       x: 80,
       y: 80,
       width: 320,
       height: 220,
       opacity: 1,
-    })
+    });
   }
 
   function addVideo(video) {
     const aspect =
-      video.height && video.width
-        ? video.height / video.width
-        : 9 / 16
+      video.height && video.width ? video.height / video.width : 9 / 16;
 
-    const w = 440
-    const h = Math.round(w * aspect)
+    const w = 440;
+    const h = Math.round(w * aspect);
 
     addShape({
-      type: 'video',
+      type: "video",
       src: video.src,
       x: 80,
       y: 80,
@@ -143,7 +132,7 @@ export default function ImageSearch({ onSearch, mode }) {
       muted: true,
       volume: 0,
       playbackRate: 1,
-    })
+    });
   }
 
   return (
@@ -199,11 +188,11 @@ export default function ImageSearch({ onSearch, mode }) {
             type="text"
             placeholder="Photos & videos…"
             value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             className="w-full pl-8 pr-3 py-2 text-xs rounded-xl outline-none border border-white/10 focus:border-violet-500/60 text-white placeholder-white/25 transition-all"
             style={{
-              background: 'rgba(255,255,255,0.06)',
+              background: "rgba(255,255,255,0.06)",
             }}
           />
         </div>
@@ -213,14 +202,13 @@ export default function ImageSearch({ onSearch, mode }) {
           disabled={loading || !query.trim()}
           className="px-3 py-2 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-40 shrink-0"
           style={{
-            background:
-              'linear-gradient(135deg,#7c3aed,#ec4899)',
+            background: "linear-gradient(135deg,#7c3aed,#ec4899)",
           }}
         >
           {loading ? (
             <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
           ) : (
-            'Go'
+            "Go"
           )}
         </button>
       </div>
@@ -229,21 +217,20 @@ export default function ImageSearch({ onSearch, mode }) {
       {searched && !loading && (
         <div className="flex gap-1 mb-2">
           <button
-            onClick={() => setActiveTab('images')}
+            onClick={() => setActiveTab("images")}
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all
               ${
-                activeTab === 'images'
-                  ? 'text-white'
-                  : 'text-white/40 hover:text-white/60'
+                activeTab === "images"
+                  ? "text-white"
+                  : "text-white/40 hover:text-white/60"
               }`}
             style={
-              activeTab === 'images'
+              activeTab === "images"
                 ? {
-                    background:
-                      'linear-gradient(135deg,#7c3aed,#6d28d9)',
+                    background: "linear-gradient(135deg,#7c3aed,#6d28d9)",
                   }
                 : {
-                    background: 'rgba(255,255,255,0.06)',
+                    background: "rgba(255,255,255,0.06)",
                   }
             }
           >
@@ -251,21 +238,20 @@ export default function ImageSearch({ onSearch, mode }) {
           </button>
 
           <button
-            onClick={() => setActiveTab('videos')}
+            onClick={() => setActiveTab("videos")}
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all
               ${
-                activeTab === 'videos'
-                  ? 'text-white'
-                  : 'text-white/40 hover:text-white/60'
+                activeTab === "videos"
+                  ? "text-white"
+                  : "text-white/40 hover:text-white/60"
               }`}
             style={
-              activeTab === 'videos'
+              activeTab === "videos"
                 ? {
-                    background:
-                      'linear-gradient(135deg,#ec4899,#db2777)',
+                    background: "linear-gradient(135deg,#ec4899,#db2777)",
                   }
                 : {
-                    background: 'rgba(255,255,255,0.06)',
+                    background: "rgba(255,255,255,0.06)",
                   }
             }
           >
@@ -278,88 +264,80 @@ export default function ImageSearch({ onSearch, mode }) {
       {loading && <Skeleton />}
 
       {/* Images */}
-      {!loading &&
-        searched &&
-        activeTab === 'images' && (
-          <div className="grid grid-cols-2 gap-1.5">
-            {images.map((img, index) => (
-              <div
-                key={`${img.id}-${index}`}
-                className="media-hover"
+      {!loading && searched && activeTab === "images" && (
+        <div className="grid grid-cols-2 gap-1.5">
+          {images.map((img, index) => (
+            <div
+              key={`${img.id}-${index}`}
+              className="media-hover"
+              style={{
+                background: img.color || "#1a1a2e",
+              }}
+              onClick={() => addImage(img.full)}
+            >
+              <img
+                src={img.preview}
+                alt=""
+                className="w-full object-cover rounded-[10px]"
                 style={{
-                  background: img.color || '#1a1a2e',
+                  minHeight: 65,
+                  maxHeight: 110,
                 }}
-                onClick={() => addImage(img.full)}
-              >
-                <img
-                  src={img.preview}
-                  alt=""
-                  className="w-full object-cover rounded-[10px]"
-                  style={{
-                    minHeight: 65,
-                    maxHeight: 110,
-                  }}
-                  loading="lazy"
-                />
-              </div>
-            ))}
+                loading="lazy"
+              />
+            </div>
+          ))}
 
-            {images.length === 0 && (
-              <p className="col-span-2 text-center py-8 text-white/30 text-xs">
-                No images found
-              </p>
-            )}
-          </div>
-        )}
+          {images.length === 0 && (
+            <p className="col-span-2 text-center py-8 text-white/30 text-xs">
+              No images found
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Videos */}
-      {!loading &&
-        searched &&
-        activeTab === 'videos' && (
-          <div className="grid grid-cols-2 gap-1.5">
-            {videos.map((vid, index) => (
-              <div
-                key={`${vid.id}-${index}`}
-                className="media-hover"
-                onClick={() => addVideo(vid)}
-              >
-                <div className="relative">
-                  <img
-                    src={vid.preview}
-                    alt=""
-                    loading="lazy"
-                    className="w-full object-cover rounded-[10px]"
-                    style={{ height: 85 }}
-                  />
+      {!loading && searched && activeTab === "videos" && (
+        <div className="grid grid-cols-2 gap-1.5">
+          {videos.map((vid, index) => (
+            <div
+              key={`${vid.id}-${index}`}
+              className="media-hover"
+              onClick={() => addVideo(vid)}
+            >
+              <div className="relative">
+                <img
+                  src={vid.preview}
+                  alt=""
+                  loading="lazy"
+                  className="w-full object-cover rounded-[10px]"
+                  style={{ height: 85 }}
+                />
 
-                  {/* Overlay */}
-                  <div className="absolute inset-0 flex items-end justify-between p-1.5 pointer-events-none">
-                    <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
-                      <span className="text-white text-[9px] ml-0.5">
-                        ▶
-                      </span>
-                    </div>
-
-                    {vid.duration != null && (
-                      <div className="bg-black/70 text-white text-[9px] font-mono px-1.5 py-0.5 rounded">
-                        {Math.floor(vid.duration / 60)}:
-                        {String(
-                          vid.duration % 60
-                        ).padStart(2, '0')}
-                      </div>
-                    )}
+                {/* Overlay */}
+                <div className="absolute inset-0 flex items-end justify-between p-1.5 pointer-events-none">
+                  <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
+                    <span className="text-white text-[9px] ml-0.5">▶</span>
                   </div>
+
+                  {vid.duration != null && (
+                    <div className="bg-black/70 text-white text-[9px] font-mono px-1.5 py-0.5 rounded">
+                      {Math.floor(vid.duration / 60)}:
+                      {String(vid.duration % 60).padStart(2, "0")}
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
+            </div>
+          ))}
 
-            {videos.length === 0 && (
-              <p className="col-span-2 text-center py-8 text-white/30 text-xs">
-                No videos found
-              </p>
-            )}
-          </div>
-        )}
+          {videos.length === 0 && (
+            <p className="col-span-2 text-center py-8 text-white/30 text-xs">
+              No videos found
+            </p>
+          )}
+        </div>
+      )}
     </div>
-  )
+  );
 }
