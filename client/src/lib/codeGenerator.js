@@ -146,6 +146,34 @@ function inferTextTag(shape) {
   return "p";
 }
 
+const _measureCanvas =
+  typeof document !== "undefined" ? document.createElement("canvas") : null;
+const _measureCtx = _measureCanvas ? _measureCanvas.getContext("2d") : null;
+
+function measureTextSize(shape) {
+  if (!_measureCtx) return { width: 200, height: 30 };
+  const fontSize = shape.fontSize || 16;
+  const fontFamily = shape.fontFamily || "Inter, sans-serif";
+  const konvaFontStyle = shape.fontStyle || "normal";
+  const isBold =
+    konvaFontStyle.includes("bold") || /^\d+$/.test(konvaFontStyle);
+  const isItalic = konvaFontStyle.includes("italic");
+  const weight = isBold
+    ? /^\d+$/.test(konvaFontStyle)
+      ? konvaFontStyle
+      : "bold"
+    : "normal";
+  const style = isItalic ? "italic" : "normal";
+  _measureCtx.font = `${style} ${weight} ${fontSize}px ${fontFamily}`;
+  const lines = (shape.text || "").split("\n");
+  const lineHeight = fontSize * (shape.lineHeight || 1.2);
+  const width = Math.ceil(
+    Math.max(...lines.map((l) => _measureCtx.measureText(l || " ").width)) + 4,
+  );
+  const height = Math.ceil(lines.length * lineHeight + 4);
+  return { width, height };
+}
+
 function shapeToCSS(shape) {
   const scaleX = shape.scaleX ?? 1;
   const scaleY = shape.scaleY ?? 1;
@@ -158,12 +186,14 @@ function shapeToCSS(shape) {
   const pivotX = Math.round(offsetX * scaleX);
   const pivotY = Math.round(offsetY * scaleY);
 
+  const isAutoText = shape.type === "text" && (!shape.width || shape.width < 2);
+
   const css = {
     position: "absolute",
     left: `${Math.round(left)}px`,
     top: `${Math.round(top)}px`,
-    width: `${Math.round(w)}px`,
-    height: `${Math.round(h)}px`,
+    width: isAutoText ? "max-content" : `${Math.round(w)}px`,
+    height: isAutoText ? "auto" : `${Math.round(h)}px`,
     opacity: shape.opacity ?? 1,
   };
 
@@ -180,8 +210,26 @@ function shapeToCSS(shape) {
     css.color = shape.fill || "#000000";
     css.fontSize = `${shape.fontSize || 16}px`;
     css.fontFamily = shape.fontFamily || "Inter, sans-serif";
-    css.fontWeight = shape.fontWeight || "normal";
+
+    // Konva stores bold/italic in a single combined `fontStyle` string.
+    // e.g. "normal", "bold", "italic", "bold italic", or numeric weight "600".
+    const konvaFontStyle = shape.fontStyle || "normal";
+    const isBold =
+      konvaFontStyle === "bold" ||
+      konvaFontStyle.includes("bold") ||
+      /^\d+$/.test(konvaFontStyle);
+    const isItalic = konvaFontStyle.includes("italic");
+
+    css.fontWeight = isBold
+      ? /^\d+$/.test(konvaFontStyle)
+        ? konvaFontStyle
+        : "bold"
+      : "normal";
+    css.fontStyle = isItalic ? "italic" : "normal";
+
     css.textAlign = shape.align || "left";
+    css.whiteSpace = "pre-wrap";
+    css.wordBreak = "break-word";
     delete css.backgroundColor;
   }
 

@@ -50,6 +50,34 @@ function buildGoogleFontsUrl(usedFamilies) {
   return `https://fonts.googleapis.com/css2?${families}&display=swap`;
 }
 
+// Replicates Konva's internal text measurement so text shapes with no
+// explicit width (auto-size mode) get the correct CSS width in the output.
+const _measureCanvas = document.createElement("canvas");
+const _measureCtx = _measureCanvas.getContext("2d");
+
+function measureTextSize(shape) {
+  const fontSize = shape.fontSize || 16;
+  const fontFamily = shape.fontFamily || "Inter, sans-serif";
+  const konvaFontStyle = shape.fontStyle || "normal";
+  const isBold =
+    konvaFontStyle.includes("bold") || /^\d+$/.test(konvaFontStyle);
+  const isItalic = konvaFontStyle.includes("italic");
+  const weight = isBold
+    ? /^\d+$/.test(konvaFontStyle)
+      ? konvaFontStyle
+      : "bold"
+    : "normal";
+  const style = isItalic ? "italic" : "normal";
+  _measureCtx.font = `${style} ${weight} ${fontSize}px ${fontFamily}`;
+  const lines = (shape.text || "").split("\n");
+  const lineHeight = fontSize * (shape.lineHeight || 1.2);
+  const width = Math.ceil(
+    Math.max(...lines.map((l) => _measureCtx.measureText(l || " ").width)) + 4,
+  );
+  const height = Math.ceil(lines.length * lineHeight + 4);
+  return { width, height };
+}
+
 function getShapeBounds(shape) {
   switch (shape.type) {
     case "circle":
@@ -94,8 +122,18 @@ function getShapeBounds(shape) {
       const scaleY = shape.scaleY ?? 1;
       const offsetX = shape.offsetX ?? 0;
       const offsetY = shape.offsetY ?? 0;
-      const w = (shape.width || 0) * scaleX;
-      const h = (shape.height || 0) * scaleY;
+
+      let w = (shape.width || 0) * scaleX;
+      let h = (shape.height || 0) * scaleY;
+
+      // Konva text with no explicit width auto-sizes to fit the content.
+      // Replicate that here so the generated CSS width is never 0.
+      if (shape.type === "text" && (!shape.width || shape.width < 2)) {
+        const measured = measureTextSize(shape);
+        w = measured.width * scaleX;
+        h = measured.height * scaleY;
+      }
+
       return {
         x: (shape.x || 0) - offsetX * scaleX,
         y: (shape.y || 0) - offsetY * scaleY,
@@ -157,8 +195,15 @@ function shapeToCSS(shape) {
   css.position = "absolute";
   css.left = `${Math.round(bounds.x)}px`;
   css.top = `${Math.round(bounds.y)}px`;
-  css.width = `${Math.round(bounds.width)}px`;
-  css.height = `${Math.round(bounds.height)}px`;
+  // For text shapes Konva didn't assign an explicit width to,
+  // use max-content so the browser sizes it naturally — same as Konva's auto-size.
+  if (shape.type === "text" && (!shape.width || shape.width < 2)) {
+    css.width = "max-content";
+    css.height = "auto";
+  } else {
+    css.width = `${Math.round(bounds.width)}px`;
+    css.height = `${Math.round(bounds.height)}px`;
+  }
   css.boxSizing = "border-box";
   const transforms = [];
 
@@ -257,9 +302,24 @@ function shapeToCSS(shape) {
     css.color = shape.fill || "#000000";
     css.fontSize = `${shape.fontSize || 16}px`;
     css.fontFamily = `'${shape.fontFamily || "Inter"}', sans-serif`;
-    css.fontWeight =
-      shape.fontWeight || shape.fontStyle?.includes("bold") ? "bold" : "normal";
-    css.fontStyle = shape.fontStyle?.includes("italic") ? "italic" : "normal";
+
+    // Konva stores bold/italic in a single combined `fontStyle` field,
+    // e.g. "normal", "bold", "italic", "bold italic", or a numeric weight like "600".
+    // There is no separate fontWeight field on Konva text shapes.
+    const konvaFontStyle = shape.fontStyle || "normal";
+    const isBold =
+      konvaFontStyle === "bold" ||
+      konvaFontStyle.includes("bold") ||
+      /^\d+$/.test(konvaFontStyle); // numeric weight like "600"
+    const isItalic = konvaFontStyle.includes("italic");
+
+    css.fontWeight = isBold
+      ? /^\d+$/.test(konvaFontStyle)
+        ? konvaFontStyle
+        : "bold"
+      : "normal";
+    css.fontStyle = isItalic ? "italic" : "normal";
+
     css.textAlign = shape.align || "left";
     css.lineHeight = "1.4";
     css.whiteSpace = "pre-wrap";
@@ -472,7 +532,6 @@ function shapeToHTML(shape, cssMethod) {
 function collectUsedFonts(shapes) {
   const used = new Set();
   shapes.forEach((s) => {
-    console.log(JSON.stringify(s, null, 2));
     if (s.type === "text" && s.fontFamily) used.add(s.fontFamily);
   });
   return [...used];
