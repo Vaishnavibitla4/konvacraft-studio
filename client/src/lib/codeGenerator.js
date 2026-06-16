@@ -23,8 +23,13 @@ export const FRAMEWORKS = [
 ];
 
 export const CSS_METHODS = [
+  { id: "tailwind", label: "Tailwind CSS" },
+
+  { id: "cssmodules", label: "CSS Modules" },
+
   { id: "inline", label: "Inline Styles" },
-  { id: "classes", label: "CSS Classes" },
+
+  { id: "plain", label: "Plain CSS" },
 ];
 
 export function generateFromDesign(pages, currentPageIndex, options = {}) {
