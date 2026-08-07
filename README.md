@@ -1,20 +1,35 @@
-# 🎨 Design Editor
+# 🎨 KonvaCraft Studio
 
 A full-stack design editor built with **React**, **Konva.js**, **Node.js/Express**, **PostgreSQL**, **Cloudinary**, and **Firebase Auth**.
 
 ---
 
+## 📸 Live Demo
+
+|                                                                                                                                          |                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **New design picker** — start from a blank canvas or a Social Post / Presentation / Banner / Poster / Thumbnail / Images-to-Video preset | ![Design types](docs/screenshots/designtypes.png)     |
+| **Shapes panel** — rectangles, circles, ellipses, triangles, polygons, stars, arrows, and lines, placed straight onto the canvas         | ![Shapes panel](docs/screenshots/shapespanel.png)     |
+| **Text styles** — one-click preset styles (Heading, Elegant, Modern, Script, Display, Typewriter...) built on Google Fonts               | ![Font styles](docs/screenshots/fontstyles.png)       |
+| **Image settings** — position, size, rotation, opacity, border radius, brightness, contrast, and blur, all live on the selected image    | ![Image settings](docs/screenshots/imagesettings.png) |
+| **Video library** — upload and drop clips onto the canvas (up to 10 minutes / 500MB) alongside the rest of the design                    | ![Video panel](docs/screenshots/videopanel.png)       |
+| **Audio library** — upload and preview background tracks or voiceovers (MP3/WAV/OGG/M4A) to layer into a design                          | ![Audio panel](docs/screenshots/audiopanel.png)       |
+| **Export formats** — PNG (transparent), JPG, PDF, or an image-slideshow video (.webm), at 1x/2x/3x scale                                 | ![Export formats](docs/screenshots/exportformats.png) |
+| **Export Code** — turn the canvas into real React, Next.js, Vue 3, or HTML source, with inline-style or CSS-class output                 | ![Code export](docs/screenshots/codeexport.png)       |
+
+---
+
 ## Tech Stack
 
-| Layer      | Technology                        |
-|------------|-----------------------------------|
-| Frontend   | React 18, Vite, TailwindCSS       |
-| Canvas     | Konva.js + react-konva            |
-| State      | Zustand                           |
-| Auth       | Firebase Authentication           |
-| Backend    | Node.js + Express                 |
-| Database   | PostgreSQL                        |
-| File Store | Cloudinary (images + thumbnails)  |
+| Layer      | Technology                       |
+| ---------- | -------------------------------- |
+| Frontend   | React 18, Vite, TailwindCSS      |
+| Canvas     | Konva.js + react-konva           |
+| State      | Zustand                          |
+| Auth       | Firebase Authentication          |
+| Backend    | Node.js + Express                |
+| Database   | PostgreSQL                       |
+| File Store | Cloudinary (images + thumbnails) |
 
 ---
 
@@ -87,18 +102,22 @@ cd ../server && npm install
 ### Step 4 — PostgreSQL Setup
 
 **Option A — Local (Docker)**
+
 ```bash
 docker run --name design-db -e POSTGRES_PASSWORD=password -e POSTGRES_DB=design_editor -p 5432:5432 -d postgres:16
 ```
 
 **Option B — Hosted (recommended)**
+
 - [Neon](https://neon.tech) — free serverless Postgres
 - [Supabase](https://supabase.com) — free tier with extras
 
 **Run the schema:**
+
 ```bash
 psql "postgresql://user:password@localhost:5432/design_editor" -f server/schema.sql
 ```
+
 Or paste the contents of `server/schema.sql` into the Neon/Supabase SQL editor.
 
 ---
@@ -106,6 +125,7 @@ Or paste the contents of `server/schema.sql` into the Neon/Supabase SQL editor.
 ### Step 5 — Configure Environment Variables
 
 **Client** — copy and fill in:
+
 ```bash
 cp client/.env.example client/.env
 ```
@@ -120,6 +140,7 @@ VITE_FIREBASE_APP_ID=...
 ```
 
 **Server** — copy and fill in:
+
 ```bash
 cp server/.env.example server/.env
 ```
@@ -150,31 +171,32 @@ npm run dev
 ```
 
 - Client: [http://localhost:5173](http://localhost:5173)
-- Server: [http://localhost:4000](http://localhost:4000)
+- Server: [http://localhost:5000](http://localhost:5000)
 
 ---
 
 ## Features
 
-| Feature               | Details                                      |
-|-----------------------|----------------------------------------------|
-| Auth                  | Email/Password + Google login via Firebase   |
-| Canvas tools          | Rectangle, Circle, Text, Line, Image         |
-| Drag & resize         | Konva Transformer handles resize + rotate    |
-| Properties panel      | Fill, stroke, opacity, font, position, size  |
-| Layers panel          | Reorder and delete shapes                    |
-| Asset panel           | Upload images → Cloudinary, click to add     |
-| Save / auto-save      | Saves canvas JSON to PostgreSQL every 30s    |
-| Thumbnail             | Auto-generated on save, stored in Cloudinary |
-| Export PNG            | `stage.toDataURL()` → download at 2x res     |
-| Undo / Redo           | Full history stack (50 steps) in Zustand     |
-| Keyboard shortcuts    | Ctrl+Z undo, Ctrl+Y redo, Delete to remove   |
+| Feature            | Details                                      |
+| ------------------ | -------------------------------------------- |
+| Auth               | Email/Password + Google login via Firebase   |
+| Canvas tools       | Rectangle, Circle, Text, Line, Image         |
+| Drag & resize      | Konva Transformer handles resize + rotate    |
+| Properties panel   | Fill, stroke, opacity, font, position, size  |
+| Layers panel       | Reorder and delete shapes                    |
+| Asset panel        | Upload images → Cloudinary, click to add     |
+| Save / auto-save   | Saves canvas JSON to PostgreSQL every 30s    |
+| Thumbnail          | Auto-generated on save, stored in Cloudinary |
+| Export PNG         | `stage.toDataURL()` → download at 2x res     |
+| Undo / Redo        | Full history stack (50 steps) in Zustand     |
+| Keyboard shortcuts | Ctrl+Z undo, Ctrl+Y redo, Delete to remove   |
 
 ---
 
 ## Deployment
 
 ### Client → Vercel
+
 ```bash
 cd client && npm run build
 # Then push to GitHub and import in Vercel
@@ -182,6 +204,7 @@ cd client && npm run build
 ```
 
 ### Server → Railway / Render / Fly.io
+
 ```bash
 # Push server/ to GitHub
 # Set all server env vars in your hosting dashboard
@@ -189,6 +212,7 @@ cd client && npm run build
 ```
 
 ### Database → Neon (recommended)
+
 - Create project at neon.tech
 - Copy connection string to DATABASE_URL
 - Run schema.sql once
@@ -197,16 +221,16 @@ cd client && npm run build
 
 ## API Reference
 
-| Method | Endpoint                  | Description               |
-|--------|---------------------------|---------------------------|
-| GET    | /api/designs              | List user's designs       |
-| POST   | /api/designs              | Create new design         |
-| GET    | /api/designs/:id          | Load design (canvas JSON) |
-| PUT    | /api/designs/:id          | Save / auto-save design   |
-| DELETE | /api/designs/:id          | Delete design             |
-| GET    | /api/assets               | List user's assets        |
-| POST   | /api/assets/upload        | Upload image to Cloudinary|
-| POST   | /api/assets/upload-dataurl| Upload thumbnail           |
-| DELETE | /api/assets/:id           | Delete asset              |
+| Method | Endpoint                   | Description                |
+| ------ | -------------------------- | -------------------------- |
+| GET    | /api/designs               | List user's designs        |
+| POST   | /api/designs               | Create new design          |
+| GET    | /api/designs/:id           | Load design (canvas JSON)  |
+| PUT    | /api/designs/:id           | Save / auto-save design    |
+| DELETE | /api/designs/:id           | Delete design              |
+| GET    | /api/assets                | List user's assets         |
+| POST   | /api/assets/upload         | Upload image to Cloudinary |
+| POST   | /api/assets/upload-dataurl | Upload thumbnail           |
+| DELETE | /api/assets/:id            | Delete asset               |
 
 All endpoints require `Authorization: Bearer <firebase_id_token>` header.

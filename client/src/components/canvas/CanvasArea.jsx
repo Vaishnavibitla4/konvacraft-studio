@@ -60,6 +60,8 @@ function ImageShape({ shape, isSelected, onSelect, onChange }) {
         y={shape.y}
         width={shape.width}
         height={shape.height}
+        scaleX={shape.scaleX ?? 1}
+        scaleY={shape.scaleY ?? 1}
         rotation={shape.rotation || 0}
         opacity={shape.opacity ?? 1}
         cornerRadius={shape.cornerRadius || 0}
@@ -266,6 +268,8 @@ function VideoShape({ shape, isSelected, onSelect, onChange }) {
         y={shape.y}
         width={shape.width}
         height={shape.height}
+        scaleX={shape.scaleX ?? 1}
+        scaleY={shape.scaleY ?? 1}
         rotation={shape.rotation || 0}
         opacity={shape.opacity ?? 1}
         cornerRadius={shape.cornerRadius || 0}
